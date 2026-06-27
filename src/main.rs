@@ -8,7 +8,7 @@ use serde_json::Value;
 
 const MAX_PAYLOAD_SIZE: usize = 1024 * 1024; // 1 MB limit
 
-pub fn process_payload(line_bytes: &[u8]) -> Result<Option<Value>, String> {
+pub fn process_payload(line_bytes: &[u8]) -> Result<bool, String> {
     if line_bytes.len() > MAX_PAYLOAD_SIZE {
         return Err("Payload exceeds maximum allowed size".to_string());
     }
@@ -16,14 +16,14 @@ pub fn process_payload(line_bytes: &[u8]) -> Result<Option<Value>, String> {
     // Attempt to convert and parse, ignore empty lines
     let line_str = std::str::from_utf8(line_bytes).unwrap_or("").trim();
     if line_str.is_empty() {
-        return Ok(None);
+        return Ok(false);
     }
 
-    let parsed: Value = match serde_json::from_str(line_str) {
-        Ok(v) => v,
-        Err(_) => return Err("Invalid JSON".to_string()),
-    };
-    Ok(Some(parsed))
+    if serde_json::from_str::<Value>(line_str).is_err() {
+        return Err("Invalid JSON".to_string());
+    }
+    
+    Ok(true)
 }
 
 pub fn install_rmcp(config_path: &str) -> Result<(), String> {
@@ -148,12 +148,11 @@ async fn main() -> io::Result<()> {
                     stdout_reader.consume(pos + 1);
                     
                     match process_payload(&line_buf) {
-                        Ok(Some(val)) => {
-                            let out = format!("{}\n", serde_json::to_string(&val).unwrap());
-                            if host_stdout.write_all(out.as_bytes()).await.is_err() { break; }
+                        Ok(true) => {
+                            if host_stdout.write_all(&line_buf).await.is_err() { break; }
                             let _ = host_stdout.flush().await;
                         }
-                        Ok(None) => {}
+                        Ok(false) => {}
                         Err(e) => {
                             eprintln!("RMCP Security Error: {}", e);
                             std::process::exit(1);
@@ -191,7 +190,7 @@ mod tests {
         let payload = json!({"jsonrpc": "2.0", "method": "test", "id": 1}).to_string();
         let result = process_payload(payload.as_bytes());
         assert!(result.is_ok());
-        assert_eq!(result.unwrap().unwrap(), json!({"jsonrpc": "2.0", "method": "test", "id": 1}));
+        assert_eq!(result.unwrap(), true);
     }
 
     #[test]
