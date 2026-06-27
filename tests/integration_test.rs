@@ -33,17 +33,27 @@ fn cleanup_config(config: &str, lock: &str) {
     let _ = fs::remove_file(lock);
 }
 
+fn get_mock_server() -> Vec<&'static str> {
+    #[cfg(target_os = "windows")]
+    { vec!["cmd", "/C", "more"] }
+    #[cfg(not(target_os = "windows"))]
+    { vec!["cat"] }
+}
+
 #[test]
 fn test_proxy_e2e_forwarding() {
-    let mut child = Command::new(env!("CARGO_BIN_EXE_rmcp"))
-        .arg("cmd")
-        .arg("/C")
-        .arg("more")
+    let mock_server = get_mock_server();
+    let mut cmd = Command::new(env!("CARGO_BIN_EXE_rmcp"));
+    for arg in mock_server {
+        cmd.arg(arg);
+    }
+    
+    let mut child = cmd
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .spawn()
         .expect("Failed to spawn RMCP");
-
+    
     let mut stdin = child.stdin.take().unwrap();
     stdin.write_all(b"{\"jsonrpc\":\"2.0\",\"id\":1,\"result\":\"ok\"}\n").unwrap();
     drop(stdin); // close stdin to signal EOF
@@ -59,12 +69,15 @@ fn test_proxy_e2e_forwarding() {
 fn test_proxy_e2e_vigil_enforcement() {
     let (config_path, pubkey_hex, lock_path) = setup_signed_config();
 
-    let mut child = Command::new(env!("CARGO_BIN_EXE_rmcp"))
+    let mock_server = get_mock_server();
+    let mut cmd = Command::new(env!("CARGO_BIN_EXE_rmcp"));
+    for arg in mock_server {
+        cmd.arg(arg);
+    }
+
+    let mut child = cmd
         .env("RMCP_CONFIG_PATH", &config_path)
         .env("RMCP_PUBLIC_KEY", &pubkey_hex)
-        .arg("cmd")
-        .arg("/C")
-        .arg("more")
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .spawn()
