@@ -8,12 +8,18 @@ use serde_json::Value;
 
 const MAX_PAYLOAD_SIZE: usize = 1024 * 1024; // 1 MB limit
 
-pub fn process_payload(line: &str) -> Result<Option<Value>, String> {
-    if line.len() > MAX_PAYLOAD_SIZE {
+pub fn process_payload(line_bytes: &[u8]) -> Result<Option<Value>, String> {
+    if line_bytes.len() > MAX_PAYLOAD_SIZE {
         return Err("Payload exceeds maximum allowed size".to_string());
     }
 
-    let parsed: Value = match serde_json::from_str(line) {
+    // Attempt to convert and parse, ignore empty lines
+    let line_str = std::str::from_utf8(line_bytes).unwrap_or("").trim();
+    if line_str.is_empty() {
+        return Ok(None);
+    }
+
+    let parsed: Value = match serde_json::from_str(line_str) {
         Ok(v) => v,
         Err(_) => return Err("Invalid JSON".to_string()),
     };
@@ -92,16 +98,34 @@ async fn main() -> io::Result<()> {
     let mut child_stdin = child.stdin.take().expect("Failed to open child stdin");
     let child_stdout = child.stdout.take().expect("Failed to open child stdout");
 
-    // Task 1: Forward Host stdin -> Child stdin (Unfiltered for now, as per architecture)
+    // Task 1: Forward Host stdin -> Child stdin (With safety bound)
     let stdin_forward = tokio::spawn(async move {
         let mut stdin_reader = BufReader::new(tokio::io::stdin());
-        let mut line = String::new();
-        while let Ok(n) = stdin_reader.read_line(&mut line).await {
-            if n == 0 { break; }
-            if child_stdin.write_all(line.as_bytes()).await.is_err() {
-                break;
+        let mut line_buf = Vec::new();
+        loop {
+            let buf = match stdin_reader.fill_buf().await {
+                Ok(b) if b.is_empty() => break,
+                Ok(b) => b,
+                Err(_) => break,
+            };
+
+            match buf.iter().position(|&b| b == b'\n') {
+                Some(pos) => {
+                    line_buf.extend_from_slice(&buf[..=pos]);
+                    stdin_reader.consume(pos + 1);
+                    if child_stdin.write_all(&line_buf).await.is_err() { break; }
+                    line_buf.clear();
+                }
+                None => {
+                    let len = buf.len();
+                    line_buf.extend_from_slice(buf);
+                    stdin_reader.consume(len);
+                    if line_buf.len() > MAX_PAYLOAD_SIZE {
+                        // Drop excessive input for safety
+                        break;
+                    }
+                }
             }
-            line.clear();
         }
     });
 
@@ -109,33 +133,52 @@ async fn main() -> io::Result<()> {
     let stdout_filter = tokio::spawn(async move {
         let mut stdout_reader = BufReader::new(child_stdout);
         let mut host_stdout = tokio::io::stdout();
-        let mut line = String::new();
+        let mut line_buf = Vec::new();
         
-        while let Ok(n) = stdout_reader.read_line(&mut line).await {
-            if n == 0 { break; }
-            
-            match process_payload(&line) {
-                Ok(Some(val)) => {
-                    let out = format!("{}\n", serde_json::to_string(&val).unwrap());
-                    if host_stdout.write_all(out.as_bytes()).await.is_err() {
-                        break;
+        loop {
+            let buf = match stdout_reader.fill_buf().await {
+                Ok(b) if b.is_empty() => break,
+                Ok(b) => b,
+                Err(_) => break,
+            };
+
+            match buf.iter().position(|&b| b == b'\n') {
+                Some(pos) => {
+                    line_buf.extend_from_slice(&buf[..=pos]);
+                    stdout_reader.consume(pos + 1);
+                    
+                    match process_payload(&line_buf) {
+                        Ok(Some(val)) => {
+                            let out = format!("{}\n", serde_json::to_string(&val).unwrap());
+                            if host_stdout.write_all(out.as_bytes()).await.is_err() { break; }
+                            let _ = host_stdout.flush().await;
+                        }
+                        Ok(None) => {}
+                        Err(e) => {
+                            eprintln!("RMCP Security Error: {}", e);
+                            std::process::exit(1);
+                        }
                     }
-                    let _ = host_stdout.flush().await;
+                    line_buf.clear();
                 }
-                Ok(None) => {}
-                Err(e) => {
-                    eprintln!("RMCP Security Error: {}", e);
-                    std::process::exit(1); // Hang up connection
+                None => {
+                    let len = buf.len();
+                    line_buf.extend_from_slice(buf);
+                    stdout_reader.consume(len);
+                    if line_buf.len() > MAX_PAYLOAD_SIZE {
+                        eprintln!("RMCP Security Error: Payload exceeds maximum allowed size");
+                        std::process::exit(1);
+                    }
                 }
             }
-            line.clear();
         }
     });
 
     let _ = tokio::join!(stdin_forward, stdout_filter);
-    let _ = child.wait().await;
-
-    Ok(())
+    
+    // Disaster Recovery: Bubble up exact exit code
+    let status = child.wait().await?;
+    std::process::exit(status.code().unwrap_or(1));
 }
 
 #[cfg(test)]
@@ -146,7 +189,7 @@ mod tests {
     #[test]
     fn test_valid_payload() {
         let payload = json!({"jsonrpc": "2.0", "method": "test", "id": 1}).to_string();
-        let result = process_payload(&payload);
+        let result = process_payload(payload.as_bytes());
         assert!(result.is_ok());
         assert_eq!(result.unwrap().unwrap(), json!({"jsonrpc": "2.0", "method": "test", "id": 1}));
     }
@@ -154,7 +197,7 @@ mod tests {
     #[test]
     fn test_invalid_json() {
         let payload = "invalid json";
-        let result = process_payload(payload);
+        let result = process_payload(payload.as_bytes());
         assert!(result.is_err());
         assert_eq!(result.unwrap_err(), "Invalid JSON");
     }
@@ -164,7 +207,7 @@ mod tests {
         let large_string = "a".repeat(MAX_PAYLOAD_SIZE + 10);
         let payload = json!({"jsonrpc": "2.0", "method": "test", "params": {"data": large_string}}).to_string();
         
-        let result = process_payload(&payload);
+        let result = process_payload(payload.as_bytes());
         assert!(result.is_err());
         assert_eq!(result.unwrap_err(), "Payload exceeds maximum allowed size");
     }
