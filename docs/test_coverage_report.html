@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>RMCP Test Coverage & Security Report</title>
+    <style>
+        body { font-family: system-ui, -apple-system, sans-serif; line-height: 1.6; max-width: 800px; margin: 0 auto; padding: 2rem; color: #333; }
+        h1, h2 { color: #1a1a1a; }
+        .success { color: #059669; font-weight: bold; }
+        .card { border: 1px solid #e5e7eb; border-radius: 8px; padding: 1.5rem; margin-bottom: 1.5rem; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
+        code { background: #f3f4f6; padding: 0.2rem 0.4rem; border-radius: 4px; font-size: 0.9em; }
+    </style>
+</head>
+<body>
+    <h1>RMCP Security Validation Report</h1>
+    <p>Automated verification of the Rust Model Context Protocol Security Gateway.</p>
+
+    <div class="card">
+        <h2>Coverage Summary</h2>
+        <p>Core proxy components have been verified via TDD.</p>
+        <ul>
+            <li><strong>JSON-RPC Parsing:</strong> <span class="success">PASS</span></li>
+            <li><strong>Threshold Poisoning Defense (ShareLock):</strong> <span class="success">PASS</span></li>
+            <li><strong>Invalid JSON Handling:</strong> <span class="success">PASS</span></li>
+        </ul>
+    </div>
+
+    <div class="card">
+        <h2>Security Validations Details</h2>
+        <h3>Threshold Poisoning</h3>
+        <p>
+            The gateway enforces a strict <code>MAX_PAYLOAD_SIZE</code> of 1MB. Any incoming JSON-RPC payload exceeding this limit is immediately dropped, and the connection is closed. This prevents the host agent from processing maliciously bloated payloads designed to consume resources or trigger downstream overflow vulnerabilities.
+        </p>
+        <p><strong>Status:</strong> The test <code>test_sharelock_threshold_poisoning</code> successfully confirms that a 1MB+ payload returns a <code>Payload exceeds maximum allowed size</code> error.</p>
+    </div>
+
+    <p><small>Generated automatically by RMCP QA Agent.</small></p>
+</body>
+</html>
