@@ -1,2 +1,4 @@
 /target
 .env
+.rmcp_audit.log
+test_rmcp.json*

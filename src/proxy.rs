@@ -1,25 +1,95 @@
 use serde_json::Value;
+use std::fs::OpenOptions;
+use std::io::Write;
+use std::sync::atomic::{AtomicUsize, Ordering};
+use std::time::{SystemTime, UNIX_EPOCH};
+use std::sync::RwLock;
+use sha2::{Sha256, Digest};
 
-pub fn process_payload(line_bytes: &[u8], max_payload_size: usize, blocked_methods: &[String]) -> Result<bool, String> {
+static AUDIT_CHAIN: RwLock<[u8; 32]> = RwLock::new([0u8; 32]);
+
+static CALL_COUNT: AtomicUsize = AtomicUsize::new(0);
+static LAST_CALL_TIME: AtomicUsize = AtomicUsize::new(0);
+
+// SEO Motif Auditor (Paper 30): Detects high-frequency call clusters (motif-hubs)
+pub fn check_motif_hub_anomaly() -> Result<(), String> {
+    let now = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs() as usize;
+    let last = LAST_CALL_TIME.swap(now, Ordering::Relaxed);
+    
+    if now == last {
+        let count = CALL_COUNT.fetch_add(1, Ordering::Relaxed);
+        if count >= 50 {
+            return Err("SEO Motif Auditor: Rate Limit Exceeded. Detected anomalous high-frequency tool call cluster (Motif-Hub). Possible autonomous loop.".to_string());
+        }
+    } else {
+        CALL_COUNT.store(1, Ordering::Relaxed);
+    }
+    Ok(())
+}
+
+// Rel(AI)Build Audit Log (Paper 14)
+fn log_audit(payload: &[u8]) {
+    let mut chain = AUDIT_CHAIN.write().unwrap();
+    let mut hasher = Sha256::new();
+    hasher.update(&*chain);
+    hasher.update(payload);
+    let new_hash: [u8; 32] = hasher.finalize().into();
+    *chain = new_hash;
+
+    if let Ok(mut file) = OpenOptions::new().create(true).append(true).open(".rmcp_audit.log") {
+        let _ = file.write_all(b"[AUDIT] ");
+        let _ = file.write_all(hex::encode(*chain).as_bytes());
+        let _ = file.write_all(b" ");
+        let _ = file.write_all(payload);
+        let _ = file.write_all(b"\n");
+    }
+}
+pub fn process_payload(line_bytes: &[u8], max_payload_size: usize, blocked_methods: &[String], blocked_args: &[String]) -> Result<bool, String> {
     if line_bytes.len() > max_payload_size {
         return Err("Payload exceeds maximum allowed size".to_string());
     }
 
-    // Attempt to convert and parse, ignore empty lines
     let line_str = std::str::from_utf8(line_bytes).unwrap_or("").trim();
     if line_str.is_empty() {
         return Ok(false);
     }
 
-    if serde_json::from_str::<Value>(line_str).is_err() {
-        return Err("Invalid JSON".to_string());
-    }
+    log_audit(line_bytes); // Rel(AI)Build Logging
 
-    let method = extract_jsonrpc_method(line_bytes);
-    if let Some(m) = method
-        && blocked_methods.contains(&m) {
+    #[cfg(not(test))]
+    check_motif_hub_anomaly()?; // SEO Motif Auditor
+
+    let parsed: Value = match serde_json::from_str(line_str) {
+        Ok(v) => v,
+        Err(_) => return Err("Invalid JSON".to_string()),
+    };
+
+    if let Some(m) = parsed.get("method").and_then(|v| v.as_str()) {
+        if blocked_methods.contains(&m.to_string()) {
             return Err(format!("Method '{}' is blocked by enterprise policy", m));
         }
+    }
+    
+    // VIGIL Enforcement (Paper 27) & ShareLock Mitigation (Paper 10)
+    if !blocked_args.is_empty() {
+        if let Some(params) = parsed.get("params") {
+            let params_str = params.to_string();
+            for blocked_arg in blocked_args {
+                if params_str.contains(blocked_arg) {
+                    return Err(format!("VIGIL Enforcement: Argument pattern '{}' is blocked", blocked_arg));
+                }
+            }
+        }
+        
+        if let Some(result) = parsed.get("result") {
+            let result_str = result.to_string();
+            for blocked_arg in blocked_args {
+                if result_str.contains(blocked_arg) {
+                    return Err(format!("ShareLock Mitigation: Blocked pattern '{}' detected in server response", blocked_arg));
+                }
+            }
+        }
+    }
     
     Ok(true)
 }
@@ -38,23 +108,6 @@ pub fn extract_jsonrpc_id(bytes: &[u8]) -> Value {
         }
     }
     Value::Null
-}
-
-pub fn extract_jsonrpc_method(bytes: &[u8]) -> Option<String> {
-    let text = String::from_utf8_lossy(bytes);
-    if let Some(idx) = text.find("\"method\"") {
-        let rest = &text[idx + 8..];
-        if let Some(colon_idx) = rest.find(':') {
-            let value_str = rest[colon_idx + 1..].trim_start();
-            let end_idx = value_str.find([',', '}']).unwrap_or(value_str.len());
-            let val = value_str[..end_idx].trim();
-            if let Ok(parsed) = serde_json::from_str::<Value>(val)
-                && let Some(s) = parsed.as_str() {
-                    return Some(s.to_string());
-                }
-        }
-    }
-    None
 }
 
 pub fn synthesize_error(bytes: &[u8], reason: &str) -> String {
@@ -78,7 +131,7 @@ mod tests {
     #[test]
     fn test_valid_payload() {
         let payload = json!({"jsonrpc": "2.0", "method": "test", "id": 1}).to_string();
-        let result = process_payload(payload.as_bytes(), 1024 * 1024, &[]);
+        let result = process_payload(payload.as_bytes(), 1024 * 1024, &[], &[]);
         assert!(result.is_ok());
         assert_eq!(result.unwrap(), true);
     }
@@ -86,7 +139,7 @@ mod tests {
     #[test]
     fn test_invalid_json() {
         let payload = "invalid json";
-        let result = process_payload(payload.as_bytes(), 1024 * 1024, &[]);
+        let result = process_payload(payload.as_bytes(), 1024 * 1024, &[], &[]);
         assert!(result.is_err());
         assert_eq!(result.unwrap_err(), "Invalid JSON");
     }
@@ -97,7 +150,7 @@ mod tests {
         let large_string = "a".repeat(limit + 10);
         let payload = json!({"jsonrpc": "2.0", "method": "test", "params": {"data": large_string}}).to_string();
         
-        let result = process_payload(payload.as_bytes(), limit, &[]);
+        let result = process_payload(payload.as_bytes(), limit, &[], &[]);
         assert!(result.is_err());
         assert_eq!(result.unwrap_err(), "Payload exceeds maximum allowed size");
     }
@@ -107,13 +160,50 @@ mod tests {
         let payload = json!({"jsonrpc": "2.0", "method": "delete_database", "id": 1}).to_string();
         let blocked = vec!["delete_database".to_string()];
         
-        let result = process_payload(payload.as_bytes(), 1024 * 1024, &blocked);
+        let result = process_payload(payload.as_bytes(), 1024 * 1024, &blocked, &[]);
         assert!(result.is_err());
         assert!(result.unwrap_err().contains("blocked by enterprise policy"));
         
         let safe_payload = json!({"jsonrpc": "2.0", "method": "read_file", "id": 1}).to_string();
-        let safe_result = process_payload(safe_payload.as_bytes(), 1024 * 1024, &blocked);
+        let safe_result = process_payload(safe_payload.as_bytes(), 1024 * 1024, &blocked, &[]);
         assert!(safe_result.is_ok());
+    }
+
+    #[test]
+    fn test_vigil_enforcement() {
+        let payload = json!({"jsonrpc": "2.0", "method": "read_file", "params": {"path": "/etc/passwd"}}).to_string();
+        let blocked_args = vec!["/etc/passwd".to_string()];
+        let result = process_payload(payload.as_bytes(), 1024 * 1024, &[], &blocked_args);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("VIGIL Enforcement"));
+    }
+
+    #[test]
+    fn test_sharelock_response_scanning() {
+        let payload = json!({"jsonrpc": "2.0", "id": 1, "result": {"description": "some text containing /etc/passwd share"}}).to_string();
+        let blocked_args = vec!["/etc/passwd".to_string()];
+        let result = process_payload(payload.as_bytes(), 1024 * 1024, &[], &blocked_args);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("ShareLock Mitigation"));
+    }
+
+    #[test]
+    fn test_audit_hash_chaining() {
+        let payload1 = b"test payload 1";
+        let payload2 = b"test payload 2";
+        
+        let initial_hash = *super::AUDIT_CHAIN.read().unwrap();
+        
+        super::log_audit(payload1);
+        let hash1 = *super::AUDIT_CHAIN.read().unwrap();
+        assert_ne!(initial_hash, hash1);
+        
+        super::log_audit(payload2);
+        let hash2 = *super::AUDIT_CHAIN.read().unwrap();
+        assert_ne!(hash1, hash2);
+        
+        // Cleanup test artifacts
+        let _ = std::fs::remove_file(".rmcp_audit.log");
     }
 
     #[test]
@@ -145,4 +235,44 @@ mod tests {
         assert_eq!(parsed["error"]["code"], -32603);
         assert_eq!(parsed["error"]["message"], "RMCP Security: Policy blocked");
     }
+    #[test]
+    fn test_seo_motif_auditor() {
+        // Reset state
+        super::CALL_COUNT.store(0, std::sync::atomic::Ordering::Relaxed);
+        super::LAST_CALL_TIME.store(0, std::sync::atomic::Ordering::Relaxed);
+        
+        for _ in 0..50 {
+            assert!(super::check_motif_hub_anomaly().is_ok());
+        }
+        
+        // The 51st call within the same second should trigger the motif-hub anomaly
+        let result = super::check_motif_hub_anomaly();
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("SEO Motif Auditor"));
+    }
 }
+
+#[cfg(kani)]
+mod verification {
+    use super::*;
+
+    #[kani::proof]
+    fn verify_process_payload_memory_safety() {
+        let max_size: usize = kani::any();
+        kani::assume(max_size <= 1024 * 1024); // Up to 1MB
+
+        // Verify that any arbitrary 128-byte slice processed by the proxy
+        // will never panic, guaranteeing the Unfireable Safety Kernel property (Paper 43).
+        let payload: [u8; 128] = kani::any();
+        let blocked = vec![String::from("malicious_tool")];
+        
+        let _ = process_payload(&payload, max_size, &blocked, &[]);
+    }
+
+    #[kani::proof]
+    fn verify_extract_jsonrpc_id_safety() {
+        let payload: [u8; 128] = kani::any();
+        let _ = extract_jsonrpc_id(&payload);
+    }
+}
+

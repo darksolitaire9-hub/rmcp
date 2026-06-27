@@ -1,5 +1,6 @@
 mod config;
 mod proxy;
+mod policy;
 
 use std::io::{self};
 use std::env;
@@ -20,12 +21,8 @@ async fn main() -> io::Result<()> {
         .and_then(|v| v.parse().ok())
         .unwrap_or(1024 * 1024); // Default to 1MB
         
-    let blocked_methods: Vec<String> = env::var("RMCP_BLOCKED_METHODS")
-        .unwrap_or_default()
-        .split(',')
-        .map(|s| s.trim().to_string())
-        .filter(|s| !s.is_empty())
-        .collect();
+    let config_path = env::var("RMCP_CONFIG_PATH").unwrap_or_else(|_| "rmcp.json".to_string());
+    let pubkey_hex = env::var("RMCP_PUBLIC_KEY").unwrap_or_default();
 
     if args[1] == "--install" {
         if args.len() < 3 {
@@ -44,9 +41,8 @@ async fn main() -> io::Result<()> {
         }
     }
 
-    let mut crash_count = 0;
-    loop {
-        let mut child = Command::new(&args[1])
+    // Remove the loop and crash_count completely
+    let mut child = Command::new(&args[1])
             .args(&args[2..])
             .stdin(std::process::Stdio::piped())
             .stdout(std::process::Stdio::piped())
@@ -88,11 +84,34 @@ async fn main() -> io::Result<()> {
         });
 
         // Task 2: Filter Child stdout -> Host stdout
-        let blocked_methods_clone = blocked_methods.clone();
+        let config_path_clone = config_path.clone();
+        let pubkey_hex_clone = pubkey_hex.clone();
+        
         let stdout_filter = tokio::spawn(async move {
             let mut stdout_reader = BufReader::new(child_stdout);
             let mut host_stdout = tokio::io::stdout();
             let mut line_buf = Vec::new();
+            
+            let mut last_modified: u64 = 0;
+            let mut current_policy = policy::PolicyConfig::default();
+            
+            // Attempt initial load, if keys are provided. Fail closed if tamper detected.
+            if !pubkey_hex_clone.is_empty() {
+                match policy::load_policy(&config_path_clone, &pubkey_hex_clone) {
+                    Ok(p) => {
+                        current_policy = p;
+                        if let Ok(meta) = std::fs::metadata(&config_path_clone) {
+                            last_modified = meta.modified().unwrap_or(std::time::SystemTime::UNIX_EPOCH)
+                                .duration_since(std::time::UNIX_EPOCH).unwrap().as_secs();
+                        }
+                    }
+                    Err(e) => {
+                        eprintln!("RMCP Fatal: Config integrity failure on startup: {}", e);
+                        std::process::exit(1);
+                    }
+                }
+            }
+            
             
             loop {
                 let buf = match stdout_reader.fill_buf().await {
@@ -106,7 +125,28 @@ async fn main() -> io::Result<()> {
                         line_buf.extend_from_slice(&buf[..=pos]);
                         stdout_reader.consume(pos + 1);
                         
-                        match proxy::process_payload(&line_buf, max_payload_size, &blocked_methods_clone) {
+                        // Policy Hot-Reloading
+                        if !pubkey_hex_clone.is_empty() {
+                            if let Ok(meta) = std::fs::metadata(&config_path_clone) {
+                                let mtime = meta.modified().unwrap_or(std::time::SystemTime::UNIX_EPOCH)
+                                    .duration_since(std::time::UNIX_EPOCH).unwrap().as_secs();
+                                if mtime > last_modified {
+                                    match policy::load_policy(&config_path_clone, &pubkey_hex_clone) {
+                                        Ok(p) => {
+                                            current_policy = p;
+                                            last_modified = mtime;
+                                        }
+                                        Err(e) => {
+                                            // Fail closed on tamper during reload
+                                            eprintln!("RMCP Fatal: Config tampered during hot-reload: {}", e);
+                                            std::process::exit(1);
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        
+                        match proxy::process_payload(&line_buf, max_payload_size, &current_policy.blocked_methods, &current_policy.blocked_args) {
                             Ok(true) => {
                                 if host_stdout.write_all(&line_buf).await.is_err() { break; }
                                 let _ = host_stdout.flush().await;
@@ -145,11 +185,7 @@ async fn main() -> io::Result<()> {
         if status.success() {
             std::process::exit(0);
         } else {
-            crash_count += 1;
-            let backoff = std::cmp::min(1 << crash_count, 16);
-            eprintln!("RMCP: Child process crashed with {}. Restarting in {}s... (BEAM Variant)", status, backoff);
-            tokio::time::sleep(tokio::time::Duration::from_secs(backoff)).await;
-            continue;
+            eprintln!("RMCP Fatal: Child process crashed with {}. Failing closed.", status);
+            std::process::exit(1);
         }
-    }
 }
