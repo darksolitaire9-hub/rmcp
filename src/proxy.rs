@@ -18,6 +18,35 @@ pub fn process_payload(line_bytes: &[u8], max_payload_size: usize) -> Result<boo
     Ok(true)
 }
 
+pub fn extract_jsonrpc_id(bytes: &[u8]) -> Value {
+    let text = String::from_utf8_lossy(bytes);
+    if let Some(idx) = text.find("\"id\"") {
+        let rest = &text[idx + 4..];
+        if let Some(colon_idx) = rest.find(':') {
+            let value_str = rest[colon_idx + 1..].trim_start();
+            let end_idx = value_str.find(|c| c == ',' || c == '}').unwrap_or(value_str.len());
+            let val = value_str[..end_idx].trim();
+            if let Ok(parsed) = serde_json::from_str::<Value>(val) {
+                return parsed;
+            }
+        }
+    }
+    Value::Null
+}
+
+pub fn synthesize_error(bytes: &[u8], reason: &str) -> String {
+    let id = extract_jsonrpc_id(bytes);
+    let error_msg = serde_json::json!({
+        "jsonrpc": "2.0",
+        "error": {
+            "code": -32603,
+            "message": format!("RMCP Security: {}", reason)
+        },
+        "id": id
+    });
+    format!("{}\n", error_msg.to_string())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -48,5 +77,16 @@ mod tests {
         let result = process_payload(payload.as_bytes(), limit);
         assert!(result.is_err());
         assert_eq!(result.unwrap_err(), "Payload exceeds maximum allowed size");
+    }
+
+    #[test]
+    fn test_extract_jsonrpc_id() {
+        let payload = b"{\"jsonrpc\": \"2.0\", \"id\": 42, \"result\": \"huge...\"";
+        let id = extract_jsonrpc_id(payload);
+        assert_eq!(id, json!(42));
+        
+        let payload_str = b"{\"jsonrpc\": \"2.0\", \"id\": \"abc\", \"result\": \"huge...\"";
+        let id_str = extract_jsonrpc_id(payload_str);
+        assert_eq!(id_str, json!("abc"));
     }
 }

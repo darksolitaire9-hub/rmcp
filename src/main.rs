@@ -41,6 +41,7 @@ async fn main() -> io::Result<()> {
         .args(&args[2..])
         .stdin(std::process::Stdio::piped())
         .stdout(std::process::Stdio::piped())
+        .kill_on_drop(true)
         .spawn()?;
 
     let mut child_stdin = child.stdin.take().expect("Failed to open child stdin");
@@ -102,6 +103,9 @@ async fn main() -> io::Result<()> {
                         }
                         Ok(false) => {}
                         Err(e) => {
+                            let error_msg = proxy::synthesize_error(&line_buf, &e);
+                            let _ = host_stdout.write_all(error_msg.as_bytes()).await;
+                            let _ = host_stdout.flush().await;
                             eprintln!("RMCP Security Error: {}", e);
                             std::process::exit(1);
                         }
@@ -113,7 +117,11 @@ async fn main() -> io::Result<()> {
                     line_buf.extend_from_slice(buf);
                     stdout_reader.consume(len);
                     if line_buf.len() > max_payload_size {
-                        eprintln!("RMCP Security Error: Payload exceeds maximum allowed size");
+                        let e = "Payload exceeds maximum allowed size";
+                        let error_msg = proxy::synthesize_error(&line_buf, e);
+                        let _ = host_stdout.write_all(error_msg.as_bytes()).await;
+                        let _ = host_stdout.flush().await;
+                        eprintln!("RMCP Security Error: {}", e);
                         std::process::exit(1);
                     }
                 }
