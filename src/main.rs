@@ -1,7 +1,13 @@
 use std::io::{self, BufRead, Write};
 use serde_json::Value;
 
+const MAX_PAYLOAD_SIZE: usize = 1024 * 1024; // 1 MB limit
+
 pub fn process_payload(line: &str) -> Result<Option<Value>, String> {
+    if line.len() > MAX_PAYLOAD_SIZE {
+        return Err("Payload exceeds maximum allowed size".to_string());
+    }
+
     let parsed: Value = match serde_json::from_str(line) {
         Ok(v) => v,
         Err(_) => return Err("Invalid JSON".to_string()),
@@ -55,5 +61,15 @@ mod tests {
         let result = process_payload(payload);
         assert!(result.is_err());
         assert_eq!(result.unwrap_err(), "Invalid JSON");
+    }
+
+    #[test]
+    fn test_sharelock_threshold_poisoning() {
+        let large_string = "a".repeat(MAX_PAYLOAD_SIZE + 10);
+        let payload = json!({"jsonrpc": "2.0", "method": "test", "params": {"data": large_string}}).to_string();
+        
+        let result = process_payload(&payload);
+        assert!(result.is_err());
+        assert_eq!(result.unwrap_err(), "Payload exceeds maximum allowed size");
     }
 }
