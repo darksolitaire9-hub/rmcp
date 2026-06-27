@@ -13,6 +13,7 @@ async fn main() -> io::Result<()> {
     if args.len() < 2 {
         eprintln!("Usage: {} <command> [args...]", args[0]);
         eprintln!("       {} --install <mcp.json>", args[0]);
+        eprintln!("       {} --keygen <rmcp.json>", args[0]);
         std::process::exit(1);
     }
     
@@ -36,6 +37,20 @@ async fn main() -> io::Result<()> {
             }
             Err(e) => {
                 eprintln!("Installation failed: {}", e);
+                std::process::exit(1);
+            }
+        }
+    }
+    
+    if args[1] == "--keygen" {
+        if args.len() < 3 {
+            eprintln!("Missing path to config file. Usage: rmcp --keygen <rmcp.json>");
+            std::process::exit(1);
+        }
+        match policy::generate_keys(&args[2]) {
+            Ok(_) => return Ok(()),
+            Err(e) => {
+                eprintln!("Key generation failed: {}", e);
                 std::process::exit(1);
             }
         }

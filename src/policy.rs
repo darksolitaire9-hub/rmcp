@@ -44,3 +44,31 @@ pub fn load_policy(config_path: &str, pubkey_hex: &str) -> Result<PolicyConfig, 
         
     Ok(config)
 }
+
+pub fn generate_keys(config_path: &str) -> Result<(), Box<dyn std::error::Error>> {
+    let content = fs::read_to_string(config_path)?;
+    let lock_path = format!("{}.lock", config_path);
+    
+    // Generate a secure random keypair
+    use rand_core::OsRng;
+    use ed25519_dalek::{SigningKey, Signer};
+    
+    let mut csprng = OsRng;
+    let signing_key = SigningKey::generate(&mut csprng);
+    let verifying_key = signing_key.verifying_key();
+    
+    let mut hasher = Sha256::new();
+    hasher.update(content.as_bytes());
+    let config_hash = hasher.finalize();
+    
+    let signature = signing_key.sign(&config_hash);
+    let signature_hex = hex::encode(signature.to_bytes());
+    
+    fs::write(&lock_path, signature_hex)?;
+    
+    let pubkey_hex = hex::encode(verifying_key.as_bytes());
+    println!("✅ Security Lockfile Generated: {}", lock_path);
+    println!("🔑 RMCP_PUBLIC_KEY: {}", pubkey_hex);
+    println!("Store this key safely and pass it to RMCP via the RMCP_PUBLIC_KEY environment variable.");
+    Ok(())
+}

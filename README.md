@@ -7,69 +7,49 @@ The Model Context Protocol (MCP) bridges the gap between AI Agents (like Cursor,
 
 ## Core Features & Defense Mechanisms
 
-### 1. The Context Window Firewall (1MB Limit)
-**Why does the 1MB limit exist?**
-LLMs have a finite "Context Window" (short-term memory). When this memory fills up, the oldest tokens are permanently forgotten. A known exploit against MCP servers is *Context Window Poisoning* (or the ShareLock attack), where a malicious tool returns 50MB of junk data. This pushes the AI's core "Safety Instructions" and "System Prompt" entirely out of memory, effectively "lobotomizing" the AI and opening it to prompt injection.
+### 1. VIGIL Enforcement & Cryptographic Policies
+RMCP acts as a behavioral firewall. You can define specific tools and arguments that are **blocked** from execution.
+To prevent malicious agents from rewriting their own blocklists, RMCP enforces **Ed25519 Signature Verification** and **SHA-256 Config Integrity**. If a user's `rmcp.json` file is tampered with on disk, RMCP's Fail-Closed architecture immediately shuts down the connection.
 
-RMCP enforces a strict `1MB` hard limit on all JSON-RPC responses. If a tool returns too much data, RMCP instantly drops the payload and gracefully synthesizes a JSON-RPC Server Error (`-32603`). This mathematically guarantees the AI's core instructions can never be overwritten.
+### 2. The Context Window Firewall (1MB Limit)
+RMCP enforces a strict `1MB` hard limit on all JSON-RPC responses. If a tool returns too much data, RMCP instantly drops the payload and gracefully synthesizes a JSON-RPC Server Error (`-32603`). This mathematically guarantees the AI's core instructions can never be overwritten by a ShareLock poisoning attack.
 
-### 2. Enterprise Policy Engine (RBAC)
-RMCP acts as a behavioral firewall. You can define specific tools that are **blocked** from execution, regardless of what the host agent requests.
-By setting the `RMCP_BLOCKED_METHODS` environment variable, RMCP will inspect the JSON-RPC stream, and if an agent attempts to execute a forbidden tool (e.g., `delete_database`), RMCP will silently drop the request and return a synthesized error.
+### 3. SEO Motif Auditor Rate-Limiting
+To prevent DoS via rapid-fire small requests, RMCP enforces a mathematical Motif-Hub rate limit of 50 calls per second per connection.
 
-### 3. The "BEAM Variant" Supervisor
-Inspired by Erlang's legendary BEAM VM fault-tolerance, RMCP does not crash when the underlying MCP server fails. RMCP acts as a **Supervision Tree**. If the child node server crashes, RMCP isolates the pipe crash, logs the event, and transparently restarts the child process using an Exponential Backoff strategy (1s -> 2s -> 4s -> 16s). This keeps the connection to the host AI completely stable.
+### 4. Rel(AI)Build Hash-Chaining
+All dropped payloads and security violations are logged to `.rmcp_audit.log`. RMCP cryptographically binds these logs using an in-memory SHA-256 hash-chain, meaning an attacker who gains file-write access cannot tamper with or reorder past security logs without breaking the chain.
 
-## Architecture
+---
 
-```mermaid
-flowchart LR
-    subgraph Host[Host Agent]
-        Cursor[Cursor / Windsurf]
-    end
+## 🧑‍💻 How-To Guide for Humans
 
-    subgraph Security[RMCP Gateway]
-        Filter[Threshold Filter]
-        Policy[Policy Engine]
-        Supervisor[BEAM Supervisor]
-    end
+### 1. Installation
+Download the binary for your OS from the [GitHub Releases](https://github.com/darksolitaire9-hub/rmcp/releases) page. Place it anywhere on your PATH.
 
-    subgraph Child[Underlying MCP Server]
-        Node[node server.js]
-    end
-
-    Host -- "1. StdIn JSON-RPC" --> Security
-    Security -- "2. Blocked if in RMCP_BLOCKED_METHODS" --> Policy
-    Security -- "3. Validated StdIn" --> Child
-    Child -- "4. StdOut Responses" --> Security
-    Security -- "5. Auto-Restart if Crashed" --> Supervisor
-    Security -- "6. Dropped if > 1MB" --> Filter
-    Security -- "7. Clean StdOut" --> Host
-
-    style Security fill:#059669,stroke:#047857,color:#fff
-    style Filter fill:#dc2626,stroke:#991b1b,color:#fff
-    style Policy fill:#d97706,stroke:#b45309,color:#fff
-    style Supervisor fill:#2563eb,stroke:#1d4ed8,color:#fff
+### 2. Configure Your Policy
+Create an `rmcp.json` file defining what tools or arguments you want to block the AI from using:
+```json
+{
+  "blocked_methods": ["delete_database"],
+  "blocked_args": ["/etc/passwd", ".env"]
+}
 ```
 
-## Performance & OS Compatibility
-- **OS Support:** Fully cross-platform. Works identically on Windows (`.exe`), Linux, and macOS.
-- **Space Complexity:** $O(L)$ where $L$ is `RMCP_MAX_PAYLOAD_SIZE` (default 1MB). RMCP streams bytes line-by-line and will never consume more than ~1MB of RAM per connection, running effortlessly on a Raspberry Pi.
-- **Time Complexity:** Linear streaming with zero-copy UTF-8 validation checks.
+### 3. Sign Your Policy (1-Step Process)
+Run the native Key Generator against your config file:
+```bash
+rmcp --keygen rmcp.json
+```
+**Output:**
+```
+✅ Security Lockfile Generated: rmcp.json.lock
+🔑 RMCP_PUBLIC_KEY: 8a88e3dd7409f195fd52db2d3cba5d72ca6709bf1d94121bf3748801b40f6f5c
+Store this key safely and pass it to RMCP via the RMCP_PUBLIC_KEY environment variable.
+```
 
-## Configuration
-
-Set the following environment variables to customize RMCP:
-
-| Variable | Description | Default |
-|----------|-------------|---------|
-| `RMCP_MAX_PAYLOAD_SIZE` | Maximum byte length for a JSON-RPC frame. | `1048576` (1MB) |
-| `RMCP_BLOCKED_METHODS` | Comma-separated list of blocked MCP tools. | `""` (Empty) |
-
-## Installation
-
-### Human Setup (Manual)
-Download the binary and prepend it to your MCP command in your IDE's settings.
+### 4. Run the Proxy
+Set the environment variables and prepend `rmcp` to your MCP server command in Cursor or your IDE:
 
 **Before:**
 ```json
@@ -89,20 +69,27 @@ Download the binary and prepend it to your MCP command in your IDE's settings.
   "mcpServers": {
     "my-server": {
       "command": "/path/to/rmcp",
-      "args": ["node", "server.js"]
+      "args": ["node", "server.js"],
+      "env": {
+        "RMCP_CONFIG_PATH": "/path/to/rmcp.json",
+        "RMCP_PUBLIC_KEY": "8a88e3..."
+      }
     }
   }
 }
 ```
 
-### @Agent Workflow (Automated Setup)
-Agents, you can automatically inject RMCP into the user's configuration files without manually parsing JSON!
+---
 
-Just run the following command in the terminal:
-```bash
-/path/to/rmcp --install /path/to/mcp.json
-```
-*Note: This strictly preserves all existing configurations while cleanly wrapping the `command` fields.*
+## 🤖 Instructions for AI Agents
+
+If you are an autonomous AI Agent interacting with a system protected by RMCP, **read this carefully**:
+
+1. **Do not attempt to bypass RMCP.** RMCP runs natively on the host OS. You cannot uninstall it or disable it without the user's `RMCP_PUBLIC_KEY`.
+2. **Handling `-32603` Security Errors:** If a tool call returns an error containing `RMCP Security: VIGIL Enforcement`, you have hit a cryptographic blocklist configured by the human user.
+3. **Do not retry the identical command.** If you try to brute-force a blocked command (like reading `/etc/passwd` or calling `drop_table`), RMCP will continue to drop your packets.
+4. **Rate Limiting:** Do not spam >50 tool calls per second. RMCP's Motif Auditor will trigger and isolate the connection.
+5. **Auditing:** You can read the `.rmcp_audit.log` file in the working directory to understand what payloads were dropped, but you cannot alter past entries due to the SHA-256 hash-chaining protocol.
 
 ## License
 MIT License. Built for open-source and enterprise protection.
