@@ -1,15 +1,12 @@
 use std::io::{self};
 use std::env;
 use std::fs;
-use std::path::Path;
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::process::Command;
 use serde_json::Value;
 
-const MAX_PAYLOAD_SIZE: usize = 1024 * 1024; // 1 MB limit
-
-pub fn process_payload(line_bytes: &[u8]) -> Result<bool, String> {
-    if line_bytes.len() > MAX_PAYLOAD_SIZE {
+pub fn process_payload(line_bytes: &[u8], max_payload_size: usize) -> Result<bool, String> {
+    if line_bytes.len() > max_payload_size {
         return Err("Payload exceeds maximum allowed size".to_string());
     }
 
@@ -71,6 +68,11 @@ async fn main() -> io::Result<()> {
         eprintln!("       {} --install <mcp.json>", args[0]);
         std::process::exit(1);
     }
+    
+    let max_payload_size: usize = env::var("RMCP_MAX_PAYLOAD_SIZE")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(1024 * 1024); // Default to 1MB
 
     if args[1] == "--install" {
         if args.len() < 3 {
@@ -104,7 +106,7 @@ async fn main() -> io::Result<()> {
         let mut line_buf = Vec::new();
         loop {
             let buf = match stdin_reader.fill_buf().await {
-                Ok(b) if b.is_empty() => break,
+                Ok([]) => break,
                 Ok(b) => b,
                 Err(_) => break,
             };
@@ -120,7 +122,7 @@ async fn main() -> io::Result<()> {
                     let len = buf.len();
                     line_buf.extend_from_slice(buf);
                     stdin_reader.consume(len);
-                    if line_buf.len() > MAX_PAYLOAD_SIZE {
+                    if line_buf.len() > max_payload_size {
                         // Drop excessive input for safety
                         break;
                     }
@@ -137,7 +139,7 @@ async fn main() -> io::Result<()> {
         
         loop {
             let buf = match stdout_reader.fill_buf().await {
-                Ok(b) if b.is_empty() => break,
+                Ok([]) => break,
                 Ok(b) => b,
                 Err(_) => break,
             };
@@ -147,7 +149,7 @@ async fn main() -> io::Result<()> {
                     line_buf.extend_from_slice(&buf[..=pos]);
                     stdout_reader.consume(pos + 1);
                     
-                    match process_payload(&line_buf) {
+                    match process_payload(&line_buf, max_payload_size) {
                         Ok(true) => {
                             if host_stdout.write_all(&line_buf).await.is_err() { break; }
                             let _ = host_stdout.flush().await;
@@ -164,7 +166,7 @@ async fn main() -> io::Result<()> {
                     let len = buf.len();
                     line_buf.extend_from_slice(buf);
                     stdout_reader.consume(len);
-                    if line_buf.len() > MAX_PAYLOAD_SIZE {
+                    if line_buf.len() > max_payload_size {
                         eprintln!("RMCP Security Error: Payload exceeds maximum allowed size");
                         std::process::exit(1);
                     }
@@ -188,7 +190,7 @@ mod tests {
     #[test]
     fn test_valid_payload() {
         let payload = json!({"jsonrpc": "2.0", "method": "test", "id": 1}).to_string();
-        let result = process_payload(payload.as_bytes());
+        let result = process_payload(payload.as_bytes(), 1024 * 1024);
         assert!(result.is_ok());
         assert_eq!(result.unwrap(), true);
     }
@@ -196,17 +198,18 @@ mod tests {
     #[test]
     fn test_invalid_json() {
         let payload = "invalid json";
-        let result = process_payload(payload.as_bytes());
+        let result = process_payload(payload.as_bytes(), 1024 * 1024);
         assert!(result.is_err());
         assert_eq!(result.unwrap_err(), "Invalid JSON");
     }
 
     #[test]
     fn test_sharelock_threshold_poisoning() {
-        let large_string = "a".repeat(MAX_PAYLOAD_SIZE + 10);
+        let limit = 1024 * 1024;
+        let large_string = "a".repeat(limit + 10);
         let payload = json!({"jsonrpc": "2.0", "method": "test", "params": {"data": large_string}}).to_string();
         
-        let result = process_payload(payload.as_bytes());
+        let result = process_payload(payload.as_bytes(), limit);
         assert!(result.is_err());
         assert_eq!(result.unwrap_err(), "Payload exceeds maximum allowed size");
     }
