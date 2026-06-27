@@ -122,8 +122,27 @@ mod tests {
         let id = extract_jsonrpc_id(payload);
         assert_eq!(id, json!(42));
         
-        let payload_str = b"{\"jsonrpc\": \"2.0\", \"id\": \"abc\", \"result\": \"huge...\"";
+        let payload_str = b"{\"jsonrpc\": \"2.0\", \"id\": \"req-1\", \"result\": \"huge...\"";
         let id_str = extract_jsonrpc_id(payload_str);
-        assert_eq!(id_str, json!("abc"));
+        assert_eq!(id_str, json!("req-1"));
+
+        let payload_missing = b"{\"jsonrpc\": \"2.0\", \"result\": \"huge...\"";
+        let id_missing = extract_jsonrpc_id(payload_missing);
+        assert_eq!(id_missing, Value::Null);
+    }
+
+    #[test]
+    fn test_synthesize_error_format() {
+        let payload = b"{\"jsonrpc\": \"2.0\", \"id\": 99, \"method\": \"bad_tool\"}";
+        let error_str = synthesize_error(payload, "Policy blocked");
+        
+        // Parse the generated error string to verify it is strict JSON-RPC 2.0 compliant
+        let parsed: Value = serde_json::from_str(&error_str).expect("Should synthesize valid JSON");
+        
+        assert_eq!(parsed["jsonrpc"], "2.0");
+        assert_eq!(parsed["id"], 99);
+        assert!(parsed["error"].is_object());
+        assert_eq!(parsed["error"]["code"], -32603);
+        assert_eq!(parsed["error"]["message"], "RMCP Security: Policy blocked");
     }
 }
