@@ -16,11 +16,10 @@ pub fn process_payload(line_bytes: &[u8], max_payload_size: usize, blocked_metho
     }
 
     let method = extract_jsonrpc_method(line_bytes);
-    if let Some(m) = method {
-        if blocked_methods.contains(&m) {
+    if let Some(m) = method
+        && blocked_methods.contains(&m) {
             return Err(format!("Method '{}' is blocked by enterprise policy", m));
         }
-    }
     
     Ok(true)
 }
@@ -31,7 +30,7 @@ pub fn extract_jsonrpc_id(bytes: &[u8]) -> Value {
         let rest = &text[idx + 4..];
         if let Some(colon_idx) = rest.find(':') {
             let value_str = rest[colon_idx + 1..].trim_start();
-            let end_idx = value_str.find(|c| c == ',' || c == '}').unwrap_or(value_str.len());
+            let end_idx = value_str.find([',', '}']).unwrap_or(value_str.len());
             let val = value_str[..end_idx].trim();
             if let Ok(parsed) = serde_json::from_str::<Value>(val) {
                 return parsed;
@@ -47,13 +46,12 @@ pub fn extract_jsonrpc_method(bytes: &[u8]) -> Option<String> {
         let rest = &text[idx + 8..];
         if let Some(colon_idx) = rest.find(':') {
             let value_str = rest[colon_idx + 1..].trim_start();
-            let end_idx = value_str.find(|c| c == ',' || c == '}').unwrap_or(value_str.len());
+            let end_idx = value_str.find([',', '}']).unwrap_or(value_str.len());
             let val = value_str[..end_idx].trim();
-            if let Ok(parsed) = serde_json::from_str::<Value>(val) {
-                if let Some(s) = parsed.as_str() {
+            if let Ok(parsed) = serde_json::from_str::<Value>(val)
+                && let Some(s) = parsed.as_str() {
                     return Some(s.to_string());
                 }
-            }
         }
     }
     None
@@ -69,7 +67,7 @@ pub fn synthesize_error(bytes: &[u8], reason: &str) -> String {
         },
         "id": id
     });
-    format!("{}\n", error_msg.to_string())
+    format!("{}\n", error_msg)
 }
 
 #[cfg(test)]
