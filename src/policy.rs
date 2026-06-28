@@ -45,7 +45,7 @@ pub fn load_policy(config_path: &str, pubkey_hex: &str) -> Result<PolicyConfig, 
     Ok(config)
 }
 
-pub fn generate_keys(config_path: &str) -> Result<(), Box<dyn std::error::Error>> {
+pub fn generate_keys(config_path: &str) -> Result<String, Box<dyn std::error::Error>> {
     let content = fs::read_to_string(config_path)?;
     let lock_path = format!("{}.lock", config_path);
     
@@ -70,5 +70,5 @@ pub fn generate_keys(config_path: &str) -> Result<(), Box<dyn std::error::Error>
     println!("✅ Security Lockfile Generated: {}", lock_path);
     println!("🔑 RMCP_PUBLIC_KEY: {}", pubkey_hex);
     println!("Store this key safely and pass it to RMCP via the RMCP_PUBLIC_KEY environment variable.");
-    Ok(())
+    Ok(pubkey_hex)
 }

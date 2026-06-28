@@ -31,7 +31,7 @@ pub fn check_motif_hub_anomaly() -> Result<(), String> {
 fn log_audit(payload: &[u8]) {
     let mut chain = AUDIT_CHAIN.write().unwrap();
     let mut hasher = Sha256::new();
-    hasher.update(&*chain);
+    hasher.update(*chain);
     hasher.update(payload);
     let new_hash: [u8; 32] = hasher.finalize().into();
     *chain = new_hash;
@@ -64,10 +64,10 @@ pub fn process_payload(line_bytes: &[u8], max_payload_size: usize, blocked_metho
         Err(_) => return Err("Invalid JSON".to_string()),
     };
 
-    if let Some(m) = parsed.get("method").and_then(|v| v.as_str()) {
-        if blocked_methods.contains(&m.to_string()) {
-            return Err(format!("Method '{}' is blocked by enterprise policy", m));
-        }
+    if let Some(m) = parsed.get("method").and_then(|v| v.as_str())
+        && blocked_methods.contains(&m.to_string())
+    {
+        return Err(format!("Method '{}' is blocked by enterprise policy", m));
     }
 
     // Dynamic Template Aho-Corasick Enforcement (O(N) Complexity)

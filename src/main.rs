@@ -150,21 +150,18 @@ async fn main() -> io::Result<()> {
                         stdout_reader.consume(pos + 1);
                         
                         // Policy Hot-Reloading
-                        if !pubkey_hex_clone.is_empty() {
-                            if let Ok(meta) = std::fs::metadata(&config_path_clone) {
-                                let mtime = meta.modified().unwrap_or(std::time::SystemTime::UNIX_EPOCH)
-                                    .duration_since(std::time::UNIX_EPOCH).unwrap().as_secs();
-                                if mtime > last_modified {
-                                    match policy::load_policy(&config_path_clone, &pubkey_hex_clone) {
-                                        Ok(p) => {
-                                            current_policy = p;
-                                            last_modified = mtime;
-                                        }
-                                        Err(e) => {
-                                            // Fail closed on tamper during reload
-                                            eprintln!("RMCP Fatal: Config tampered during hot-reload: {}", e);
-                                            std::process::exit(1);
-                                        }
+                        if !pubkey_hex_clone.is_empty() && let Ok(meta) = std::fs::metadata(&config_path_clone) {
+                            let mtime = meta.modified().unwrap_or(std::time::SystemTime::UNIX_EPOCH)
+                                .duration_since(std::time::UNIX_EPOCH).unwrap().as_secs();
+                            if mtime > last_modified {
+                                match policy::load_policy(&config_path_clone, &pubkey_hex_clone) {
+                                    Ok(p) => {
+                                        current_policy = p;
+                                        last_modified = mtime;
+                                    }
+                                    Err(e) => {
+                                        eprintln!("RMCP Fatal: Config tampered during hot-reload: {}", e);
+                                        std::process::exit(1);
                                     }
                                 }
                             }

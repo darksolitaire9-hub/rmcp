@@ -36,48 +36,19 @@ Create an `rmcp.json` file defining what tools or arguments you want to block th
 }
 ```
 
-### 3. Sign Your Policy (1-Step Process)
-Run the native Key Generator against your config file:
+### 3. One-Command Installation
+Good security tools should be invisible. You don't need to manually configure environments or run multiple scripts. Just point RMCP at your Cursor or Claude config file:
 ```bash
-rmcp --keygen rmcp.json
-```
-**Output:**
-```
-✅ Security Lockfile Generated: rmcp.json.lock
-🔑 RMCP_PUBLIC_KEY: 8a88e3dd7409f195fd52db2d3cba5d72ca6709bf1d94121bf3748801b40f6f5c
-Store this key safely and pass it to RMCP via the RMCP_PUBLIC_KEY environment variable.
+rmcp --install /path/to/claude_desktop_config.json
 ```
 
-### 4. Run the Proxy
-Set the environment variables and prepend `rmcp` to your MCP server command in Cursor or your IDE:
+**What this automatically does:**
+1. Checks if you have an `rmcp.json` policy. If not, it creates a default one.
+2. Cryptographically signs the policy and generates an Ed25519 `RMCP_PUBLIC_KEY`.
+3. Re-writes your MCP server's `command` to route through RMCP.
+4. Injects the `RMCP_PUBLIC_KEY` into the server's `env` object automatically so you never have to copy-paste it.
 
-**Before:**
-```json
-{
-  "mcpServers": {
-    "my-server": {
-      "command": "node",
-      "args": ["server.js"]
-    }
-  }
-}
-```
-
-**After:**
-```json
-{
-  "mcpServers": {
-    "my-server": {
-      "command": "/path/to/rmcp",
-      "args": ["node", "server.js"],
-      "env": {
-        "RMCP_CONFIG_PATH": "/path/to/rmcp.json",
-        "RMCP_PUBLIC_KEY": "8a88e3..."
-      }
-    }
-  }
-}
-```
+Your server is now protected by RMCP and will boot securely on the next run.
 
 ---
 
