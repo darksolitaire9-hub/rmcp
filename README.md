@@ -1,4 +1,8 @@
 # RMCP 🛡️
+
+![RMCP VIGIL Enforcement Intercepting a Blocked Call](assets/demo.gif)
+*Watch RMCP instantly drop a malicious payload from reaching the agent context window.*
+
 **Rust Model Context Protocol Security Gateway**
 
 The Model Context Protocol (MCP) bridges the gap between AI Agents (like Cursor, Windsurf, or Claude) and your local environment. But if a malicious server sends an injection payload or tries to poison the AI's context window with gigabytes of garbage data, the AI has no defense.
