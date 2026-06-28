@@ -25,6 +25,15 @@ All dropped payloads and security violations are logged to `.rmcp_audit.log`. RM
 ## 🧑‍💻 How-To Guide for Humans
 
 ### 1. Installation
+There are two ways to install RMCP:
+
+**Option A: Cargo (Recommended for Agents & Devs)**
+Compile and install directly from the verified Git release:
+```bash
+cargo install --git https://github.com/darksolitaire9-hub/rmcp --tag v0.1.5
+```
+
+**Option B: Pre-compiled Binaries**
 Download the binary for your OS from the [GitHub Releases](https://github.com/darksolitaire9-hub/rmcp/releases) page. Place it anywhere on your PATH.
 
 ### 2. Configure Your Policy
