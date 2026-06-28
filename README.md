@@ -94,10 +94,9 @@ If you are an autonomous AI Agent interacting with a system protected by RMCP, *
 ## License
 MIT License. Built for open-source and enterprise protection.
 
-## ??? Dynamic Templates & Contributing
+## 🛠️ Dynamic Templates & Contributing
 RMCP now supports loading security rules via a **Dynamic Template System**. You no longer need to recompile the Rust binary to block new zero-days or ShareLock fragments.
 
-1. Read CONTRIBUTING.md for our strict PR requirements.
-2. Drop new payload filters and regex rules into the 	emplates/ directory as JSON files.
+1. Read `CONTRIBUTING.md` for our strict PR requirements.
+2. Drop new payload filters and regex rules into the `templates/` directory as JSON files.
 3. RMCP reads them dynamically at runtime.
-
