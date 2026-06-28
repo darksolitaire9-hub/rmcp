@@ -1,6 +1,7 @@
 mod config;
 mod proxy;
 mod policy;
+mod template;
 
 use std::io::{self};
 use std::env;
@@ -56,7 +57,15 @@ async fn main() -> io::Result<()> {
         }
     }
 
-    // Remove the loop and crash_count completely
+    // Fail-Closed Boot: Compile the Aho-Corasick NFA Template Engine
+    let template_engine = match template::TemplateEngine::build("templates") {
+        Ok(engine) => std::sync::Arc::new(engine),
+        Err(e) => {
+            eprintln!("RMCP Fatal: Failed to build template engine. Boot aborted. {}", e);
+            std::process::exit(1);
+        }
+    };
+
     let mut child = Command::new(&args[1])
             .args(&args[2..])
             .stdin(std::process::Stdio::piped())
@@ -161,7 +170,8 @@ async fn main() -> io::Result<()> {
                             }
                         }
                         
-                        match proxy::process_payload(&line_buf, max_payload_size, &current_policy.blocked_methods, &current_policy.blocked_args) {
+                        let template_engine_clone = std::sync::Arc::clone(&template_engine);
+                        match proxy::process_payload(&line_buf, max_payload_size, &current_policy.blocked_methods, &current_policy.blocked_args, &template_engine_clone) {
                             Ok(true) => {
                                 if host_stdout.write_all(&line_buf).await.is_err() { break; }
                                 let _ = host_stdout.flush().await;

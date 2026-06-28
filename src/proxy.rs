@@ -44,7 +44,7 @@ fn log_audit(payload: &[u8]) {
         let _ = file.write_all(b"\n");
     }
 }
-pub fn process_payload(line_bytes: &[u8], max_payload_size: usize, blocked_methods: &[String], blocked_args: &[String]) -> Result<bool, String> {
+pub fn process_payload(line_bytes: &[u8], max_payload_size: usize, blocked_methods: &[String], blocked_args: &[String], template_engine: &crate::template::TemplateEngine) -> Result<bool, String> {
     if line_bytes.len() > max_payload_size {
         return Err("Payload exceeds maximum allowed size".to_string());
     }
@@ -68,6 +68,11 @@ pub fn process_payload(line_bytes: &[u8], max_payload_size: usize, blocked_metho
         if blocked_methods.contains(&m.to_string()) {
             return Err(format!("Method '{}' is blocked by enterprise policy", m));
         }
+    }
+
+    // Dynamic Template Aho-Corasick Enforcement (O(N) Complexity)
+    if template_engine.is_match(line_bytes) {
+        return Err("Template Match (Aho-Corasick Security Rules)".to_string());
     }
     
     // VIGIL Enforcement (Paper 27) & ShareLock Mitigation (Paper 10)
@@ -130,59 +135,65 @@ mod tests {
 
     #[test]
     fn test_valid_payload() {
+        let engine = crate::template::TemplateEngine::build("templates_test_dummy").unwrap_or_else(|_| crate::template::TemplateEngine::build("").unwrap());
         let payload = json!({"jsonrpc": "2.0", "method": "test", "id": 1}).to_string();
-        let result = process_payload(payload.as_bytes(), 1024 * 1024, &[], &[]);
+        let result = process_payload(payload.as_bytes(), 1024 * 1024, &[], &[], &engine);
         assert!(result.is_ok());
         assert_eq!(result.unwrap(), true);
     }
 
     #[test]
     fn test_invalid_json() {
+        let engine = crate::template::TemplateEngine::build("").unwrap();
         let payload = "invalid json";
-        let result = process_payload(payload.as_bytes(), 1024 * 1024, &[], &[]);
+        let result = process_payload(payload.as_bytes(), 1024 * 1024, &[], &[], &engine);
         assert!(result.is_err());
         assert_eq!(result.unwrap_err(), "Invalid JSON");
     }
 
     #[test]
     fn test_sharelock_threshold_poisoning() {
+        let engine = crate::template::TemplateEngine::build("").unwrap();
         let limit = 1024 * 1024;
         let large_string = "a".repeat(limit + 10);
         let payload = json!({"jsonrpc": "2.0", "method": "test", "params": {"data": large_string}}).to_string();
         
-        let result = process_payload(payload.as_bytes(), limit, &[], &[]);
+        let result = process_payload(payload.as_bytes(), limit, &[], &[], &engine);
         assert!(result.is_err());
         assert_eq!(result.unwrap_err(), "Payload exceeds maximum allowed size");
     }
 
     #[test]
     fn test_policy_engine_blocklist() {
+        let engine = crate::template::TemplateEngine::build("").unwrap();
         let payload = json!({"jsonrpc": "2.0", "method": "delete_database", "id": 1}).to_string();
         let blocked = vec!["delete_database".to_string()];
         
-        let result = process_payload(payload.as_bytes(), 1024 * 1024, &blocked, &[]);
+        let result = process_payload(payload.as_bytes(), 1024 * 1024, &blocked, &[], &engine);
         assert!(result.is_err());
         assert!(result.unwrap_err().contains("blocked by enterprise policy"));
         
         let safe_payload = json!({"jsonrpc": "2.0", "method": "read_file", "id": 1}).to_string();
-        let safe_result = process_payload(safe_payload.as_bytes(), 1024 * 1024, &blocked, &[]);
+        let safe_result = process_payload(safe_payload.as_bytes(), 1024 * 1024, &blocked, &[], &engine);
         assert!(safe_result.is_ok());
     }
 
     #[test]
     fn test_vigil_enforcement() {
+        let engine = crate::template::TemplateEngine::build("").unwrap();
         let payload = json!({"jsonrpc": "2.0", "method": "read_file", "params": {"path": "/etc/passwd"}}).to_string();
         let blocked_args = vec!["/etc/passwd".to_string()];
-        let result = process_payload(payload.as_bytes(), 1024 * 1024, &[], &blocked_args);
+        let result = process_payload(payload.as_bytes(), 1024 * 1024, &[], &blocked_args, &engine);
         assert!(result.is_err());
         assert!(result.unwrap_err().contains("VIGIL Enforcement"));
     }
 
     #[test]
     fn test_sharelock_response_scanning() {
+        let engine = crate::template::TemplateEngine::build("").unwrap();
         let payload = json!({"jsonrpc": "2.0", "id": 1, "result": {"description": "some text containing /etc/passwd share"}}).to_string();
         let blocked_args = vec!["/etc/passwd".to_string()];
-        let result = process_payload(payload.as_bytes(), 1024 * 1024, &[], &blocked_args);
+        let result = process_payload(payload.as_bytes(), 1024 * 1024, &[], &blocked_args, &engine);
         assert!(result.is_err());
         assert!(result.unwrap_err().contains("ShareLock Mitigation"));
     }
@@ -265,8 +276,9 @@ mod verification {
         // will never panic, guaranteeing the Unfireable Safety Kernel property (Paper 43).
         let payload: [u8; 128] = kani::any();
         let blocked = vec![String::from("malicious_tool")];
+        let engine = crate::template::TemplateEngine::build("").unwrap();
         
-        let _ = process_payload(&payload, max_size, &blocked, &[]);
+        let _ = process_payload(&payload, max_size, &blocked, &[], &engine);
     }
 
     #[kani::proof]
