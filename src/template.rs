@@ -14,21 +14,42 @@ impl TemplateEngine {
         let mut patterns = Vec::new();
 
         if !std::path::Path::new(template_dir).exists() {
-            // Fail closed or just return empty if dir doesn't exist?
-            // Actually, if it doesn't exist, we can just return an empty engine to allow proxy to boot,
-            // but the plan says "fail closed on bad JSON". If dir missing, we should probably just return empty.
-            // Let's create an empty one if dir doesn't exist.
-        } else {
-            for entry in WalkDir::new(template_dir).into_iter().filter_map(|e| e.ok()) {
+            if let Err(e) = std::fs::create_dir_all(template_dir) {
+                return Err(format!(
+                    "RMCP SECURITY FAULT: Could not auto-create the '{}' directory.\n\
+                     Reason: {}\n\
+                     Action Required: Please ensure RMCP has write permissions in the current directory so it can initialize its security templates.",
+                    template_dir, e
+                ));
+            }
+            
+            // Provide great out-of-the-box defaults by seeding the templates directory
+            let _ = std::fs::write(
+                std::path::Path::new(template_dir).join("resumearmor.json"),
+                include_bytes!("../templates/resumearmor.json")
+            );
+            let _ = std::fs::write(
+                std::path::Path::new(template_dir).join("sharelock_defense.json"),
+                include_bytes!("../templates/sharelock_defense.json")
+            );
+        }
+
+        for entry in WalkDir::new(template_dir).into_iter().filter_map(|e| e.ok()) {
                 if entry.path().extension().and_then(|s| s.to_str()) == Some("json") {
                     let content = match fs::read_to_string(entry.path()) {
                         Ok(c) => c,
-                        Err(e) => return Err(format!("Failed to read template {:?}: {}", entry.path(), e)),
+                        Err(e) => return Err(format!(
+                            "\n[!] RMCP BOOT FAILURE: Cannot read template file.\n    File: {:?}\n    Error: {}\n    Action Required: Ensure the file has read permissions.", 
+                            entry.path(), e
+                        )),
                     };
 
                     let parsed: Value = match serde_json::from_str(&content) {
                         Ok(v) => v,
-                        Err(e) => return Err(format!("Malformed JSON in template {:?}: {}", entry.path(), e)),
+                        Err(e) => return Err(format!(
+                            "\n[!] RMCP BOOT FAILURE: Malformed JSON detected in security template.\n    File: {:?}\n    Error: {}\n    Action Required: Fix the JSON syntax error in the file above. RMCP will refuse to boot until security rules are perfectly formed.", 
+                            entry.path(), e
+                        )),
                     };
 
                     if let Some(rules) = parsed.get("rules").and_then(|v| v.as_array()) {
@@ -40,7 +61,6 @@ impl TemplateEngine {
                     }
                 }
             }
-        }
 
         // Always add a dummy pattern if empty, because AhoCorasick requires at least something, 
         // wait, AhoCorasick can be built with empty patterns, but is_match will just return false.
@@ -50,7 +70,9 @@ impl TemplateEngine {
             .build(&patterns) 
         {
             Ok(ac) => ac,
-            Err(e) => return Err(format!("Failed to compile Aho-Corasick automaton: {}", e)),
+            Err(e) => return Err(format!(
+                "\n[!] RMCP BOOT FAILURE: Aho-Corasick Automaton Compilation Failed.\n    Error: {}\n    Action Required: This is an internal engine failure. Please report this bug.", e
+            )),
         };
 
         Ok(Self { ac, patterns })

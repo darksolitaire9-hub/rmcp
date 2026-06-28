@@ -61,7 +61,7 @@ async fn main() -> io::Result<()> {
     let template_engine = match template::TemplateEngine::build("templates") {
         Ok(engine) => std::sync::Arc::new(engine),
         Err(e) => {
-            eprintln!("RMCP Fatal: Failed to build template engine. Boot aborted. {}", e);
+            eprintln!("{}", e);
             std::process::exit(1);
         }
     };

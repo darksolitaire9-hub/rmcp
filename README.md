@@ -94,9 +94,13 @@ If you are an autonomous AI Agent interacting with a system protected by RMCP, *
 ## License
 MIT License. Built for open-source and enterprise protection.
 
-## 🛠️ Dynamic Templates & Contributing
+## 🛠️ Dynamic Templates & Fail-Closed Architecture
 RMCP supports loading security rules via a **Dynamic Template System**. You no longer need to recompile the Rust binary to block new zero-days, ShareLock fragments, or Prompt Injections.
 
+**Strict Fail-Closed Architecture:**
+If RMCP detects malformed JSON in a template, it will instantly crash on boot. This is intentional. A security proxy must never run with partial or corrupted rules. If RMCP fails, it acts like the Rust compiler: it prints exactly which file failed, why it failed, and gives you an "Action Required" step to fix it.
+
 1. Read `CONTRIBUTING.md` for our strict PR requirements.
-2. Drop new payload filters into the `templates/` directory as JSON files.
-3. On boot, RMCP dynamically compiles them into a unified **Aho-Corasick Finite State Machine**. This guarantees O(N) multi-pattern matching that scans thousands of threat signatures instantly, completely immune to the ReDoS vulnerabilities of traditional regex.
+2. RMCP will auto-create the `templates/` directory on first boot and seed it with `resumearmor.json` and `sharelock_defense.json`.
+3. Drop new payload filters into the `templates/` directory as JSON files.
+4. On boot, RMCP dynamically compiles them into a unified **Aho-Corasick Finite State Machine**. This guarantees O(N) multi-pattern matching that scans thousands of threat signatures instantly, completely immune to the ReDoS vulnerabilities of traditional regex.
