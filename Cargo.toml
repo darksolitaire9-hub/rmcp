@@ -11,3 +11,8 @@ sha2 = "0.10.8"
 ed25519-dalek = { version = "2.1.1", features = ["rand_core"] }
 hex = "0.4.3"
 rand_core = { version = "0.6.4", features = ["std"] }
+aho-corasick = "1.1"
+walkdir = "2.4"
+
+[dev-dependencies]
+tempfile = "3.8"
