@@ -36,6 +36,10 @@ During our cross-reference of the academic literature, we identified two missing
    - **Status:** Implemented / Mitigated.
    - **Reasoning:** Paper 10 describes a "Stealthy Multi-Tool Threshold Poisoning Attack" where malicious prompts are split via Shamir's Secret Sharing and hidden across multiple *tool descriptions* returned by the server. RMCP's VIGIL enforcement has been upgraded to scan bidirectionally: it sanitizes both the `params` (Client -> Server) and the `result` arrays (Server -> Client). ShareLock thresholds attempting to infiltrate via tool descriptions are instantly dropped before reaching the LLM agent.
 
+3. **Aho-Corasick Template Engine (O(N) Complexity)**
+   - **Status:** Implemented / Enforced.
+   - **Reasoning:** To allow operators to push zero-day rules (like Prompt Injection signatures or ShareLock fragments) without recompiling Rust, RMCP uses a Dynamic Template Engine. To prevent ReDoS (Regular Expression Denial of Service), RMCP completely bans regex. It compiles all JSON templates into an **Aho-Corasick NFA (Non-deterministic Finite Automaton)**. This mathematically guarantees **O(N) Time Complexity** (where N is the length of the payload, regardless of how many thousands of rules are loaded) and **O(M) Space Complexity** (preventing RAM exhaustion from state explosion).
+
 ## Conclusion
 
 RMCP achieves mathematically robust enterprise-grade execution-time security for MCP ecosystems. It fully implements the required controls from ShareLock mitigation to Unfireable Safety Kernel architecture, leaving zero conceptual gaps.
