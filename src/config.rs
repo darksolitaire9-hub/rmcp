@@ -5,26 +5,20 @@ use serde_json::{Value, json};
 pub fn install_rmcp(config_path: &str) -> Result<(), String> {
     // 1. Auto-generate keys if they don't exist
     let policy_path = "rmcp.json";
-    let pubkey = if !std::path::Path::new(policy_path).exists() {
-        println!("No {} found. Auto-generating default policy and cryptographic keys...", policy_path);
-        
-        // Write an empty default policy
+    if !std::path::Path::new(policy_path).exists() {
+        println!("No {} found. Auto-generating default policy...", policy_path);
         let default_policy = json!({
             "blocked_methods": [],
             "blocked_args": []
         });
         fs::write(policy_path, serde_json::to_string_pretty(&default_policy).unwrap())
             .map_err(|e| format!("Failed to create default policy: {}", e))?;
-            
-        let key = crate::policy::generate_keys(policy_path)
-            .map_err(|e| format!("Auto-keygen failed: {}", e))?;
-        key
-    } else {
-        // Read public key from existing policy
-        let content = fs::read_to_string(policy_path).map_err(|e| format!("Failed to read policy: {}", e))?;
-        let policy: Value = serde_json::from_str(&content).map_err(|e| format!("Invalid JSON: {}", e))?;
-        policy.get("public_key").and_then(|v| v.as_str()).unwrap_or("").to_string()
-    };
+    }
+    
+    // Always regenerate keys during --install to ensure we can inject the fresh public key
+    println!("Generating cryptographic keys for RMCP...");
+    let pubkey = crate::policy::generate_keys(policy_path)
+        .map_err(|e| format!("Auto-keygen failed: {}", e))?;
 
     let content = fs::read_to_string(config_path).map_err(|e| format!("Failed to read config: {}", e))?;
     let mut config: Value = serde_json::from_str(&content).map_err(|e| format!("Invalid JSON: {}", e))?;
