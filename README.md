@@ -3,7 +3,7 @@
 
 The Model Context Protocol (MCP) bridges the gap between AI Agents (like Cursor, Windsurf, or Claude) and your local environment. But if a malicious server sends an injection payload or tries to poison the AI's context window with gigabytes of garbage data, the AI has no defense.
 
-**RMCP** is a lightweight, **minimal-dependency** proxy written in Rust that intercepts and strictly filters MCP traffic *before* it reaches the agent.
+**RMCP** is a lightweight proxy written in Rust that intercepts and strictly filters MCP traffic *before* it reaches the agent.
 
 ## Core Features & Defense Mechanisms
 
@@ -12,10 +12,12 @@ RMCP acts as a behavioral firewall. You can define specific tools and arguments 
 To prevent malicious agents from rewriting their own blocklists, RMCP enforces **Ed25519 Signature Verification** and **SHA-256 Config Integrity**. If a user's `rmcp.json` file is tampered with on disk, RMCP's Fail-Closed architecture immediately shuts down the connection.
 
 ### 2. The Context Window Firewall (1MB Limit)
-RMCP enforces a strict `1MB` hard limit on all JSON-RPC responses. If a tool returns too much data, RMCP instantly drops the payload and gracefully synthesizes a JSON-RPC Server Error (`-32603`). This mathematically guarantees the AI's core instructions can never be overwritten by a ShareLock threshold poisoning attack (a stealthy attack where bad actors distribute malicious payloads across multiple benign tool descriptions to evade detection).
+RMCP enforces a strict `1MB` hard limit on all JSON-RPC responses. If a tool returns too much data, RMCP instantly drops the payload and gracefully synthesizes a JSON-RPC Server Error (`-32603`). 
+
+This mathematically guarantees the AI's core instructions can never be overwritten by **ShareLock Poisoning**. (In plain English: a ShareLock attack is when a hacker hides a massive malicious payload by splitting it into tiny pieces across dozens of fake tools. By capping the total size, RMCP makes this impossible).
 
 ### 3. Motif Auditor Rate-Limiting
-To prevent DoS via rapid-fire small requests, RMCP enforces a mathematical Motif-Hub rate limit of 50 calls per second per connection.
+To prevent Denial of Service (DoS) attacks where a malicious server spams you with thousands of tiny requests, RMCP includes a **Motif Auditor**. Think of the Motif Auditor as a bouncer: it tracks the rhythm (motif) of incoming requests and automatically cuts off any connection that fires more than 50 calls per second.
 
 ### 4. Rel(AI)Build Hash-Chaining
 All dropped payloads and security violations are logged to `.rmcp_audit.log`. RMCP cryptographically binds these logs using an in-memory SHA-256 hash-chain, meaning an attacker who gains file-write access cannot tamper with or reorder past security logs without breaking the chain.
@@ -24,20 +26,12 @@ All dropped payloads and security violations are logged to `.rmcp_audit.log`. RM
 
 ## 🧑‍💻 How-To Guide for Humans
 
-### 1. Installation & Setup Flow
-There are two ways to get the RMCP binary:
+### 1. One-Command Setup (Recommended)
+Good security tools should be invisible. You don't need to manually configure environments or run multiple scripts. 
 
-**Option A: Cargo (Recommended for Agents & Devs)**
-Compile and install directly from the verified Git release:
-```bash
-cargo install --git https://github.com/darksolitaire9-hub/rmcp --tag v0.1.5
-```
+First, get the binary (either via `cargo install --git https://github.com/darksolitaire9-hub/rmcp --tag v0.1.5` or by downloading from the [GitHub Releases](https://github.com/darksolitaire9-hub/rmcp/releases) page).
 
-**Option B: Pre-compiled Binaries**
-Download the binary for your OS from the [GitHub Releases](https://github.com/darksolitaire9-hub/rmcp/releases) page. Place it anywhere on your PATH.
-
-**One-Command Setup:**
-Good security tools should be invisible. You don't need to manually configure environments or run multiple scripts. Just point RMCP at your Cursor or Claude config file:
+Then, just point RMCP at your Cursor or Claude config file:
 ```bash
 rmcp --install /path/to/claude_desktop_config.json
 ```
