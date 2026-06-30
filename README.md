@@ -62,15 +62,19 @@ If you want to customize your rules, you can edit the `rmcp.json` file defining 
 
 ### 3. Analyzing Traffic with rmcp-shield
 
-Since all traffic violations are securely hashed in `.rmcp_audit.log`, you can use `shield-cli` to visualize the tool calling graph:
+Since all traffic violations are securely hashed in `.rmcp_audit.log`, you can use `shield-cli` (included in the release bundle) to visualize the tool calling graph and rank vulnerabilities.
+
+If you downloaded the precompiled release bundle, simply run the included executable:
 
 ```bash
 # Build the graph of your Agent's tool usage
-cargo run -p shield-cli
+./shield-cli scan
 
 # Run MESA to find the most critical nodes and edges in your agent's workflow
-cargo run -p shield-cli -- mesa
+./shield-cli mesa
 ```
+
+*(If you are building from source, use `cargo run -p shield-cli -- scan` instead).*
 
 ---
 
