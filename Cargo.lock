@@ -343,6 +343,7 @@ dependencies = [
  "serde",
  "serde_json",
  "sha2",
+ "shield-firewall",
  "tempfile",
  "tokio",
  "walkdir",
@@ -457,6 +458,11 @@ dependencies = [
 [[package]]
 name = "shield-firewall"
 version = "0.1.0"
+dependencies = [
+ "aho-corasick",
+ "serde",
+ "serde_json",
+]
 
 [[package]]
 name = "shield-mesa"

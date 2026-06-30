@@ -58,10 +58,18 @@ async fn main() -> io::Result<()> {
     }
 
     // Fail-Closed Boot: Compile the Aho-Corasick NFA Template Engine
-    let template_engine = match template::TemplateEngine::build("templates") {
-        Ok(engine) => std::sync::Arc::new(engine),
+    let template_patterns = match template::load_patterns("templates") {
+        Ok(patterns) => patterns,
         Err(e) => {
             eprintln!("{}", e);
+            std::process::exit(1);
+        }
+    };
+    
+    let firewall = match shield_firewall::Firewall::new(&template_patterns) {
+        Ok(fw) => std::sync::Arc::new(fw),
+        Err(e) => {
+            eprintln!("RMCP SECURITY FAULT: {}", e);
             std::process::exit(1);
         }
     };
@@ -167,8 +175,8 @@ async fn main() -> io::Result<()> {
                             }
                         }
                         
-                        let template_engine_clone = std::sync::Arc::clone(&template_engine);
-                        match proxy::process_payload(&line_buf, max_payload_size, &current_policy.blocked_methods, &current_policy.blocked_args, &template_engine_clone) {
+                        let firewall_clone = std::sync::Arc::clone(&firewall);
+                        match proxy::process_payload(&line_buf, max_payload_size, &current_policy.blocked_methods, &current_policy.blocked_args, &firewall_clone) {
                             Ok(true) => {
                                 if host_stdout.write_all(&line_buf).await.is_err() { break; }
                                 let _ = host_stdout.flush().await;
