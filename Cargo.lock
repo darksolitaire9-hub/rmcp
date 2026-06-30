@@ -451,6 +451,7 @@ version = "0.1.0"
 dependencies = [
  "serde",
  "serde_json",
+ "shield-mesa",
 ]
 
 [[package]]
@@ -460,6 +461,10 @@ version = "0.1.0"
 [[package]]
 name = "shield-mesa"
 version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
+]
 
 [[package]]
 name = "signal-hook-registry"

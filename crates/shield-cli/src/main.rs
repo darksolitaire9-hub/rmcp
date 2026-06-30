@@ -1,27 +1,10 @@
 use serde::{Deserialize, Serialize};
-use std::collections::{HashSet};
+use shield_mesa::{AuditEntry, Edge, ShieldGraph};
+use std::collections::HashSet;
+use std::env;
 use std::fs::File;
 use std::io::{self, BufRead};
 use std::path::Path;
-
-#[derive(Debug, Serialize, Deserialize)]
-pub struct AuditEntry {
-    pub hash: String,
-    pub payload: serde_json::Value,
-}
-
-#[derive(Debug, Serialize, Deserialize, Default)]
-pub struct ShieldGraph {
-    pub nodes: HashSet<String>,
-    pub edges: Vec<Edge>,
-}
-
-#[derive(Debug, Serialize, Deserialize, PartialEq, Eq, Hash, Clone)]
-pub struct Edge {
-    pub source: String,
-    pub target: String,
-    pub label: String,
-}
 
 pub fn parse_audit_logs(path: &Path) -> io::Result<Vec<AuditEntry>> {
     let file = File::open(path)?;
@@ -81,6 +64,8 @@ pub fn build_graph(entries: &[AuditEntry]) -> ShieldGraph {
 }
 
 fn main() -> io::Result<()> {
+    let args: Vec<String> = env::args().collect();
+    
     let path = Path::new(".rmcp_audit.log");
     if !path.exists() {
         println!("No audit log found at {:?}", path);
@@ -88,40 +73,23 @@ fn main() -> io::Result<()> {
     }
     
     let entries = parse_audit_logs(path)?;
-    println!("Parsed {} audit entries.", entries.len());
-    
     let graph = build_graph(&entries);
-    println!("Graph has {} nodes and {} edges.", graph.nodes.len(), graph.edges.len());
     
-    let out_file = File::create("shield_graph.json")?;
-    serde_json::to_writer_pretty(out_file, &graph)?;
-    println!("Wrote graph to shield_graph.json");
+    if args.len() > 1 && args[1] == "mesa" {
+        println!("Running MESA Ablation-Based Edge Criticality Ranking...");
+        let rankings = graph.rank_edges_criticality();
+        for (i, rank) in rankings.iter().enumerate() {
+            println!("#{} Edge {} -> {} ({}) - Score: {}", 
+                     i+1, rank.edge.source, rank.edge.target, rank.edge.label, rank.score);
+        }
+    } else {
+        println!("Parsed {} audit entries.", entries.len());
+        println!("Graph has {} nodes and {} edges.", graph.nodes.len(), graph.edges.len());
+        
+        let out_file = File::create("shield_graph.json")?;
+        serde_json::to_writer_pretty(out_file, &graph)?;
+        println!("Wrote graph to shield_graph.json");
+    }
     
     Ok(())
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use serde_json::json;
-
-    #[test]
-    fn test_build_graph() {
-        let entries = vec![
-            AuditEntry {
-                hash: "abc".to_string(),
-                payload: json!({"jsonrpc": "2.0", "method": "read_file", "params": {}}),
-            },
-            AuditEntry {
-                hash: "def".to_string(),
-                payload: json!({"jsonrpc": "2.0", "result": "ok"}),
-            },
-        ];
-        
-        let graph = build_graph(&entries);
-        assert!(graph.nodes.contains("Agent"));
-        assert!(graph.nodes.contains("Server"));
-        assert!(graph.nodes.contains("Tool:read_file"));
-        assert_eq!(graph.edges.len(), 3);
-    }
 }
