@@ -75,13 +75,13 @@ pub fn process_payload(line_bytes: &[u8], max_payload_size: usize, blocked_metho
         return Err("Template Match (Aho-Corasick Security Rules)".to_string());
     }
     
-    // VIGIL Enforcement (Paper 27) & ShareLock Mitigation (Paper 10)
+    // Pattern-Based Argument Scrubbing (Inspired by VIGIL, Paper 27) & ShareLock Mitigation (Paper 10)
     if !blocked_args.is_empty() {
         if let Some(params) = parsed.get("params") {
             let params_str = params.to_string();
             for blocked_arg in blocked_args {
                 if params_str.contains(blocked_arg) {
-                    return Err(format!("VIGIL Enforcement: Argument pattern '{}' is blocked", blocked_arg));
+                    return Err(format!("Pattern-Based Argument Scrubbing: Argument pattern '{}' is blocked", blocked_arg));
                 }
             }
         }
@@ -179,13 +179,13 @@ mod tests {
     }
 
     #[test]
-    fn test_vigil_enforcement() {
+    fn test_pattern_based_argument_scrubbing() {
         let engine = crate::template::TemplateEngine::build("").unwrap();
         let payload = json!({"jsonrpc": "2.0", "method": "read_file", "params": {"path": "/etc/passwd"}}).to_string();
         let blocked_args = vec!["/etc/passwd".to_string()];
         let result = process_payload(payload.as_bytes(), 1024 * 1024, &[], &blocked_args, &engine);
         assert!(result.is_err());
-        assert!(result.unwrap_err().contains("VIGIL Enforcement"));
+        assert!(result.unwrap_err().contains("Pattern-Based Argument Scrubbing"));
     }
 
     #[test]

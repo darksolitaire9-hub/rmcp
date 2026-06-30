@@ -66,7 +66,7 @@ fn test_proxy_e2e_forwarding() {
 }
 
 #[test]
-fn test_proxy_e2e_vigil_enforcement() {
+fn test_proxy_e2e_pattern_based_scrubbing() {
     let (config_path, pubkey_hex, lock_path) = setup_signed_config();
 
     let mock_server = get_mock_server();
@@ -93,5 +93,5 @@ fn test_proxy_e2e_vigil_enforcement() {
     cleanup_config(&config_path, &lock_path);
     
     assert!(out_str.contains("-32603"));
-    assert!(out_str.contains("VIGIL Enforcement"));
+    assert!(out_str.contains("Pattern-Based Argument Scrubbing"));
 }

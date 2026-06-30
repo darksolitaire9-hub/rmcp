@@ -1,0 +1,152 @@
+{
+  "resumearmor.json": {
+    "mtime": 1782723378.6201472,
+    "ast_hash": "3ef8784612318176bc60cf3e68539bd4",
+    "semantic_hash": ""
+  },
+  "rmcp.json": {
+    "mtime": 1782664286.3349257,
+    "ast_hash": "4dda7ab6fdc25b0c86ffc697db469800",
+    "semantic_hash": ""
+  },
+  "sharelock_defense.json": {
+    "mtime": 1782723378.6427758,
+    "ast_hash": "fe773fb3d56b303f067feb5db717462b",
+    "semantic_hash": ""
+  },
+  "src/config.rs": {
+    "mtime": 1782665179.5128868,
+    "ast_hash": "de8049be0bc9a766e7c4c6e239f9e7f1",
+    "semantic_hash": ""
+  },
+  "src/main.rs": {
+    "mtime": 1782664168.4720907,
+    "ast_hash": "cf633b1578c4631a3fd200bccc3f5e06",
+    "semantic_hash": ""
+  },
+  "src/policy.rs": {
+    "mtime": 1782664221.454549,
+    "ast_hash": "40d84bc9419460ef815f547a89ef5c00",
+    "semantic_hash": ""
+  },
+  "src/proxy.rs": {
+    "mtime": 1782664143.0461826,
+    "ast_hash": "7553cdc5c58f350ec117e125174254bf",
+    "semantic_hash": ""
+  },
+  "src/template.rs": {
+    "mtime": 1782663745.4690402,
+    "ast_hash": "bbf86e59b685c759e2e5771a2782d8b9",
+    "semantic_hash": ""
+  },
+  "templates/resumearmor.json": {
+    "mtime": 1782663112.5842547,
+    "ast_hash": "3ef8784612318176bc60cf3e68539bd4",
+    "semantic_hash": ""
+  },
+  "templates/sharelock_defense.json": {
+    "mtime": 1782641799.9641135,
+    "ast_hash": "fe773fb3d56b303f067feb5db717462b",
+    "semantic_hash": ""
+  },
+  "templates_test_dummy/resumearmor.json": {
+    "mtime": 1782664097.5363069,
+    "ast_hash": "3ef8784612318176bc60cf3e68539bd4",
+    "semantic_hash": ""
+  },
+  "templates_test_dummy/sharelock_defense.json": {
+    "mtime": 1782664097.5368922,
+    "ast_hash": "fe773fb3d56b303f067feb5db717462b",
+    "semantic_hash": ""
+  },
+  "test_policy.json": {
+    "mtime": 1782582749.131513,
+    "ast_hash": "c9da6eb81359248eeb5f3a0b87ca9885",
+    "semantic_hash": ""
+  },
+  "tests/integration_test.rs": {
+    "mtime": 1782581565.398764,
+    "ast_hash": "a0b4bc08e0ff2ff630157ec20c7f945d",
+    "semantic_hash": ""
+  },
+  ".github/workflows/ci.yml": {
+    "mtime": 1782582962.150593,
+    "ast_hash": "ff7c9745705e3e26d39c4f8c4a1f4d91",
+    "semantic_hash": ""
+  },
+  ".github/workflows/release.yml": {
+    "mtime": 1782582957.7805662,
+    "ast_hash": "82456256dfeb07a981e2e5a8662dfe4d",
+    "semantic_hash": ""
+  },
+  "CONTRIBUTING.md": {
+    "mtime": 1782641786.8652902,
+    "ast_hash": "75bb8875be9bd7f6702b58654d226585",
+    "semantic_hash": ""
+  },
+  "CREDITS.md": {
+    "mtime": 1782662990.930204,
+    "ast_hash": "8be52643b734f9ed331a5bdce3a56f2e",
+    "semantic_hash": ""
+  },
+  "README.md": {
+    "mtime": 1782671263.736267,
+    "ast_hash": "c67758d7cbab48246275a0faa8a80836",
+    "semantic_hash": ""
+  },
+  "RMCP_SECURITY.md": {
+    "mtime": 1782663032.6858337,
+    "ast_hash": "f1117ccc9a93a97b6f0afdf88f82e44a",
+    "semantic_hash": ""
+  },
+  "docs/agent_control_plane_exploit.md": {
+    "mtime": 1782574471.0049064,
+    "ast_hash": "db3bbfba959476a14ed23116db342636",
+    "semantic_hash": ""
+  },
+  "docs/architecture.md": {
+    "mtime": 1782575384.1944304,
+    "ast_hash": "9236cfb26edc0f7e115c72b8902799de",
+    "semantic_hash": ""
+  },
+  "docs/council_evaluation.md": {
+    "mtime": 1782574830.4390204,
+    "ast_hash": "646dd342410b9db6b5b64e9cb6a64446",
+    "semantic_hash": ""
+  },
+  "docs/eli5_readme.md": {
+    "mtime": 1782575386.6508722,
+    "ast_hash": "b6dc9c025cf0c22e52cd03d6579ae775",
+    "semantic_hash": ""
+  },
+  "docs/implementation_plan.md": {
+    "mtime": 1782575360.5034328,
+    "ast_hash": "9f301326c4c9ebf819765f4b3201e87d",
+    "semantic_hash": ""
+  },
+  "docs/mcp_security_gateway_exploit.md": {
+    "mtime": 1782574828.4104385,
+    "ast_hash": "1d9608c0bc7d8a524bf488898b9b63cb",
+    "semantic_hash": ""
+  },
+  "docs/test_coverage_report.html": {
+    "mtime": 1782576285.5473423,
+    "ast_hash": "2924902b0255f7ba1f244af38d0650f8",
+    "semantic_hash": ""
+  },
+  "skills/rmcp-builder.md": {
+    "mtime": 1782575388.7521818,
+    "ast_hash": "da9ce9d3a9247804ac522cb89d07011b",
+    "semantic_hash": ""
+  },
+  "skills/rmcp-qa.md": {
+    "mtime": 1782575390.7744396,
+    "ast_hash": "3260bc42850118c08eea3a5de786d599",
+    "semantic_hash": ""
+  },
+  "assets/demo.gif": {
+    "mtime": 1782671106.6015513,
+    "ast_hash": "f505560ca6670ecc9720b025b92c6cf9",
+    "semantic_hash": ""
+  }
+}

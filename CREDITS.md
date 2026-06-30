@@ -15,6 +15,6 @@ RMCP (Rust Model Context Protocol Security Gateway) owes its existence to the op
 We explicitly credit the following theoretical frameworks and research papers which form the backbone of RMCP's security architecture:
 - **ShareLock (Paper 10):** "A Stealthy Multi-Tool Threshold Poisoning Attack Against MCP". RMCP's 1MB threshold limit directly mitigates this vector.
 - **Rel(AI)Build Control Plane (Paper 14):** "A Deterministic Control Plane for LLM Coding Agents". Inspires our roadmap for deterministic lockfiles and audit logs.
-- **VIGIL (Paper 27):** "Runtime Enforcement of Behavioral Specifications". Serves as the blueprint for our argument-aware policy engine.
+- **VIGIL (Paper 27):** "Runtime Enforcement of Behavioral Specifications". **Inspired by** this paper, we built a pattern-based argument scrubber. Note: We do not currently implement full SMT-based trace verification as described in the paper.
 - **The Unfireable Safety Kernel (Paper 43):** "Execution-Time AI Alignment". Provides the theoretical basis for our Kani bounded-model-checking verifications.
 - **SEO Motif Auditor (Paper 30):** "Systematic identification of statistically significant network measures". Inspires our anomaly detection for anomalous tool-call sequences (the adjacent motif-hub algo).

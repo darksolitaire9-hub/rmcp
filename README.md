@@ -1,6 +1,6 @@
 # RMCP 🛡️
 
-![RMCP VIGIL Enforcement Intercepting a Blocked Call](assets/demo.gif)
+![RMCP Pattern-Based Argument Scrubbing Intercepting a Blocked Call](assets/demo.gif)
 *Watch RMCP instantly drop a malicious payload from reaching the agent context window.*
 
 **Rust Model Context Protocol Security Gateway**
@@ -11,7 +11,7 @@ The Model Context Protocol (MCP) bridges the gap between AI Agents (like Cursor,
 
 ## Core Features & Defense Mechanisms
 
-### 1. VIGIL Enforcement & Cryptographic Policies
+### 1. Pattern-Based Argument Scrubbing & Cryptographic Policies
 RMCP acts as a behavioral firewall. You can define specific tools and arguments that are **blocked** from execution.
 To prevent malicious agents from rewriting their own blocklists, RMCP enforces **Ed25519 Signature Verification** and **SHA-256 Config Integrity**. If a user's `rmcp.json` file is tampered with on disk, RMCP's Fail-Closed architecture immediately shuts down the connection.
 
@@ -64,7 +64,7 @@ If you want to customize your rules, you can edit the `rmcp.json` file defining 
 If you are an autonomous AI Agent interacting with a system protected by RMCP, **read this carefully**:
 
 1. **Do not attempt to bypass RMCP.** RMCP runs natively on the host OS. You cannot uninstall it or disable it without the user's `RMCP_PUBLIC_KEY`.
-2. **Handling `-32603` Security Errors:** If a tool call returns an error containing `RMCP Security: VIGIL Enforcement`, you have hit a cryptographic blocklist configured by the human user.
+2. **Handling `-32603` Security Errors:** If a tool call returns an error containing `RMCP Security: Pattern-Based Argument Scrubbing`, you have hit a cryptographic blocklist configured by the human user.
 3. **Do not retry the identical command.** If you try to brute-force a blocked command (like reading `/etc/passwd` or calling `drop_table`), RMCP will continue to drop your packets.
 4. **Rate Limiting:** Do not spam >50 tool calls per second. RMCP's Motif Auditor will trigger and isolate the connection.
 5. **Auditing:** You can read the `.rmcp_audit.log` file in the working directory to understand what payloads were dropped, but you cannot alter past entries due to the SHA-256 hash-chaining protocol.

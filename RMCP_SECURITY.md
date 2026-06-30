@@ -13,7 +13,7 @@ RMCP is a lightweight, mathematically proven security proxy designed to intercep
    - The policy file (`rmcp.json`) is polled dynamically (`fs::metadata`) for zero-downtime policy hot-reloading.
    - **Enterprise Crypto:** Any reload computes a SHA-256 hash of the config and verifies an Ed25519 signature stored in `.rmcp.lock` against an injected `RMCP_PUBLIC_KEY`. Tampering halts the proxy instantly.
 
-3. **VIGIL Policy Enforcement (Paper 27)**
+3. **Pattern-Based Argument Scrubbing (Inspired by VIGIL, Paper 27)**
    - RMCP parses the `params` of incoming JSON-RPC traffic.
    - It blocks explicitly defined patterns (e.g., `/etc/passwd`) and disallowed tool methods, returning synthesized JSON-RPC errors (`-32603`).
 
@@ -34,7 +34,7 @@ During our cross-reference of the academic literature, we identified two missing
 
 2. **Server-to-Client Tool Description Scanning (Paper 10 - ShareLock)**
    - **Status:** Implemented / Mitigated.
-   - **Reasoning:** Paper 10 describes a "Stealthy Multi-Tool Threshold Poisoning Attack" where malicious prompts are split via Shamir's Secret Sharing and hidden across multiple *tool descriptions* returned by the server. RMCP's VIGIL enforcement has been upgraded to scan bidirectionally: it sanitizes both the `params` (Client -> Server) and the `result` arrays (Server -> Client). ShareLock thresholds attempting to infiltrate via tool descriptions are instantly dropped before reaching the LLM agent.
+   - **Reasoning:** Paper 10 describes a "Stealthy Multi-Tool Threshold Poisoning Attack" where malicious prompts are split via Shamir's Secret Sharing and hidden across multiple *tool descriptions* returned by the server. RMCP's pattern-based argument scrubbing has been upgraded to scan bidirectionally: it sanitizes both the `params` (Client -> Server) and the `result` arrays (Server -> Client). ShareLock thresholds attempting to infiltrate via tool descriptions are instantly dropped before reaching the LLM agent.
 
 3. **Aho-Corasick Template Engine (O(N) Complexity)**
    - **Status:** Implemented / Enforced.
@@ -42,4 +42,19 @@ During our cross-reference of the academic literature, we identified two missing
 
 ## Conclusion
 
-RMCP achieves mathematically robust enterprise-grade execution-time security for MCP ecosystems. It fully implements the required controls from ShareLock mitigation to Unfireable Safety Kernel architecture, leaving zero conceptual gaps.
+By providing a true out-of-band proxy process and executing inside Rust's strict memory model, RMCP offers a security posture that simply cannot be achieved by running validation logic inside the same Python/Node.js script that hosts the vulnerable LangChain or AutoGen agent.
+
+---
+
+## Current Scope & Future Work (Limitations)
+
+RMCP implements practical, working security mechanisms inspired by cutting-edge academic research. To maintain transparency and credibility, the following outlines what is actually implemented versus what the original papers describe:
+
+| Defense | What RMCP Implements | What is Deferred (Future Work) |
+|---|---|---|
+| **VIGIL** | **Pattern-based argument scrubbing**: `params_str.contains(blocked_arg)`. Substring matching on a per-call basis. | **SMT-based execution trace monitoring**: using formal solvers (like Z3) to evaluate temporal dependencies across multiple agent steps. |
+| **ShareLock** | 1MB payload cap, bidirectional Aho-Corasick scanning. | Algebraic Shamir recombination detection. |
+| **Safety Kernel** | Out-of-band Rust proxy, fail-closed architecture, formal verification via Kani. | Broader threat modeling outlined in the original paper. |
+| **Rel(AI)Build** | SHA-256 hash-chained append-only audit logs, config lockfiles. | Full deterministic orchestration control plane. |
+
+*RMCP explicitly uses "inspired by" for features where it implements a subset of the published method.*
