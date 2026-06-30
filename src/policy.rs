@@ -23,6 +23,8 @@ pub struct PolicyConfig {
     #[serde(default)]
     pub blocked_args: Vec<String>,
     #[serde(default)]
+    pub mesa_edges: Vec<shield_mesa::MesaEdge>,
+    #[serde(default)]
     pub tool_schemas: HashMap<String, ToolSchema>,
 }
 

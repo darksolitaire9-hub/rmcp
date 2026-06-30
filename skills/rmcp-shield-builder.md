@@ -11,7 +11,7 @@ You are an agent responsible for configuring the **RMCP Shield** security gatewa
 
 1. **Schema Generation**: You must generate the `shield_policy.json` file to define `blocked_methods`, `blocked_args`, `tool_schemas`, and `mesa_edges`.
 2. **Privacy Firewall**: For `tool_schemas`, you must strictly define `allowed_fields` for each tool. If a tool should not accept PII, ensure you populate `pii_patterns` with required string literals (e.g., "SSN", "EMAIL") that match the active Aho-Corasick templates in RMCP.
-3. **MESA Rankings**: Populate `mesa_edges` with the structural criticality of edges. By default, you can invoke the RMCP `shield-cli` to automatically calculate and inject `mesa_edges`.
+3. **MESA Rankings**: Populate `mesa_edges` with the structural criticality of edges. By default, you can invoke `rmcp scan` or `rmcp mesa` to automatically calculate and inject `mesa_edges`.
 
 ## Example `shield_policy.json`
 

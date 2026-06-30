@@ -2,22 +2,83 @@ mod config;
 mod proxy;
 mod policy;
 mod template;
+mod shield;
 
 use std::io::{self};
 use std::env;
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::process::Command;
+use clap::{Parser, Subcommand};
+
+#[derive(Parser)]
+#[command(name = "rmcp", version = "0.2.0", about = "Rust Model Context Protocol Security Gateway")]
+struct Cli {
+    #[command(subcommand)]
+    command: Commands,
+}
+
+#[derive(Subcommand)]
+enum Commands {
+    /// Build the agent tool calling graph from audit logs
+    Scan,
+    /// Run MESA Ablation-Based Edge Criticality Ranking
+    Mesa,
+    /// Install RMCP wrapper into a given MCP config file
+    Install {
+        path: String,
+    },
+    /// Generate a new RMCP public/private keypair and lockfile
+    Keygen {
+        path: String,
+    },
+    /// Start the proxy (e.g. rmcp npx @modelcontextprotocol/server-postgres)
+    #[command(external_subcommand)]
+    Proxy(Vec<String>),
+}
 
 #[tokio::main]
 async fn main() -> io::Result<()> {
-    let args: Vec<String> = env::args().collect();
-    if args.len() < 2 {
-        eprintln!("Usage: {} <command> [args...]", args[0]);
-        eprintln!("       {} --install <mcp.json>", args[0]);
-        eprintln!("       {} --keygen <rmcp.json>", args[0]);
-        std::process::exit(1);
+    let cli = Cli::parse();
+
+    match cli.command {
+        Commands::Scan => {
+            return shield::run_scan();
+        }
+        Commands::Mesa => {
+            return shield::run_mesa();
+        }
+        Commands::Install { path } => {
+            match config::install_rmcp(&path) {
+                Ok(_) => {
+                    println!("Successfully installed RMCP wrapper into {}", path);
+                    return Ok(());
+                }
+                Err(e) => {
+                    eprintln!("Installation failed: {}", e);
+                    std::process::exit(1);
+                }
+            }
+        }
+        Commands::Keygen { path } => {
+            match policy::generate_keys(&path) {
+                Ok(_) => return Ok(()),
+                Err(e) => {
+                    eprintln!("Key generation failed: {}", e);
+                    std::process::exit(1);
+                }
+            }
+        }
+        Commands::Proxy(args) => {
+            if args.is_empty() {
+                eprintln!("Error: Proxy requires a command to execute.");
+                std::process::exit(1);
+            }
+            return run_proxy(args).await;
+        }
     }
-    
+}
+
+async fn run_proxy(args: Vec<String>) -> io::Result<()> {
     let max_payload_size: usize = env::var("RMCP_MAX_PAYLOAD_SIZE")
         .ok()
         .and_then(|v| v.parse().ok())
@@ -25,37 +86,6 @@ async fn main() -> io::Result<()> {
         
     let config_path = env::var("RMCP_CONFIG_PATH").unwrap_or_else(|_| "rmcp.json".to_string());
     let pubkey_hex = env::var("RMCP_PUBLIC_KEY").unwrap_or_default();
-
-    if args[1] == "--install" {
-        if args.len() < 3 {
-            eprintln!("Missing path to config file.");
-            std::process::exit(1);
-        }
-        match config::install_rmcp(&args[2]) {
-            Ok(_) => {
-                println!("Successfully installed RMCP wrapper into {}", args[2]);
-                return Ok(());
-            }
-            Err(e) => {
-                eprintln!("Installation failed: {}", e);
-                std::process::exit(1);
-            }
-        }
-    }
-    
-    if args[1] == "--keygen" {
-        if args.len() < 3 {
-            eprintln!("Missing path to config file. Usage: rmcp --keygen <rmcp.json>");
-            std::process::exit(1);
-        }
-        match policy::generate_keys(&args[2]) {
-            Ok(_) => return Ok(()),
-            Err(e) => {
-                eprintln!("Key generation failed: {}", e);
-                std::process::exit(1);
-            }
-        }
-    }
 
     // Fail-Closed Boot: Compile the Aho-Corasick NFA Template Engine
     let template_patterns = match template::load_patterns("templates") {
@@ -66,10 +96,8 @@ async fn main() -> io::Result<()> {
         }
     };
     
-
-
-    let mut child = Command::new(&args[1])
-            .args(&args[2..])
+    let mut child = Command::new(&args[0])
+            .args(&args[1..])
             .stdin(std::process::Stdio::piped())
             .stdout(std::process::Stdio::piped())
             .kill_on_drop(true)
@@ -255,3 +283,4 @@ async fn main() -> io::Result<()> {
             std::process::exit(1);
         }
 }
+
