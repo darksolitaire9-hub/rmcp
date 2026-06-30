@@ -1,4 +1,4 @@
-# RMCP 🛡️ (v0.3.2 Enterprise Gateway)
+# RMCP 🛡️ (v0.3.4 Enterprise Gateway)
 
 ![RMCP Pattern-Based Argument Scrubbing Intercepting a Blocked Call](assets/demo.gif)
 *Watch RMCP instantly drop a malicious payload from reaching the agent context window.*
@@ -48,7 +48,7 @@ RMCP includes `shield-cli`, a standalone utility that visualizes your agent's in
 
 For Enterprise Security teams evaluating RMCP, the following boundaries are explicit architectural decisions:
 
-1. **`stderr` Diagnostic Bypass**: RMCP actively filters `stdin` and `stdout` (the primary JSON-RPC channels). However, `stderr` is passed completely raw to the host's `stderr` stream. This ensures standard error logs remain readable for debugging, but means `stderr` is not scrubbed for PII or blocked patterns.
+1. **`stderr` Diagnostic Bypass**: RMCP actively filters `stdin` and `stdout` (the primary JSON-RPC channels). However, `stderr` is passed completely raw to the host's `stderr` stream. This ensures standard error logs remain readable for debugging, but means `stderr` is not scrubbed for PII or blocked patterns. **Troubleshooting Note:** If RMCP fails to boot due to a Signature Mismatch, Tampering, or Missing Keys, the fatal error message will be printed to `stderr` and the proxy will exit. If your IDE appears to be "hanging" or "failing to start", check the IDE's MCP Server Output or Extension Logs to view this `stderr` message.
 2. **Hot-Reload Race Conditions**: RMCP constantly polls `rmcp.json` for hot-reloading. If a user manually edits and saves the file in an editor that writes byte-by-byte, RMCP may read it mid-write. Because of the strict Fail-Closed requirement, an invalid JSON read mid-write will be treated as Tampering, causing a `std::process::exit(1)` crash. **DevEx Tip:** Always use the `rmcp` CLI tools or atomic renames (`mv`) to update policies on live systems.
 
 ---
@@ -65,7 +65,7 @@ For Enterprise Security teams evaluating RMCP, the following boundaries are expl
 ### 1. One-Command Setup (Recommended)
 Good security tools should be invisible. You don't need to manually configure environments or run multiple scripts. 
 
-First, get the binary (either via `cargo install --git https://github.com/darksolitaire9-hub/rmcp --tag v0.3.3` or by downloading from the [GitHub Releases](https://github.com/darksolitaire9-hub/rmcp/releases) page).
+First, get the binary (either via `cargo install --git https://github.com/darksolitaire9-hub/rmcp --tag v0.3.4` or by downloading from the [GitHub Releases](https://github.com/darksolitaire9-hub/rmcp/releases) page).
 
 Then, just point RMCP at your IDE's config file (e.g. Claude Desktop, Cursor, VS Code, or Windsurf):
 ```bash

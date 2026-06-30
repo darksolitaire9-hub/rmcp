@@ -1,5 +1,14 @@
 # Changelog
 
+## [v0.3.4] - 2026-06-30
+### Fixed
+- **Fail-Closed Boot Sequence**: Patched a bug where RMCP would silently swallow config loading errors (such as Signature Mismatches) during boot, causing it to crash ungracefully on the first JSON-RPC request. RMCP now correctly exits with code 1 immediately.
+- **Empty Key Bypass (Security Vulnerability)**: Fixed a critical logic flaw where if a valid `rmcp.json.lock` existed on disk but the IDE failed to inject the `RMCP_PUBLIC_KEY` environment variable, RMCP would silently skip policy loading and operate as a wide-open proxy. Missing keys now correctly trigger a fatal boot error.
+- **Clock Jump Panic**: Fixed an `.unwrap()` panic when the system time modification date predates the UNIX Epoch.
+
+### Added
+- **Boot Integrity Regression Tests**: Added `test_proxy_boot_signature_mismatch` and `test_proxy_boot_missing_key_when_locked` to prevent future boot enforcement regressions.
+
 ## [v0.3.3] - 2026-06-30
 ### Added
 - **Universal IDE Integration**: `rmcp install` now explicitly supports VS Code (`mcp.servers`) and Zed (`context_servers`), closing the silent failure gap on nested config schemas.

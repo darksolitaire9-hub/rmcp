@@ -11,7 +11,7 @@ use tokio::process::Command;
 use clap::{Parser, Subcommand};
 
 #[derive(Parser)]
-#[command(name = "rmcp", version = "0.3.3", about = "Rust Model Context Protocol Security Gateway")]
+#[command(name = "rmcp", version = "0.3.4", about = "Rust Model Context Protocol Security Gateway")]
 struct Cli {
     #[command(subcommand)]
     command: Commands,
@@ -82,7 +82,7 @@ fn load_combined_policy(config_path: &str, pubkey_hex: &str, template_patterns: 
     let mut rmcp_time = 0;
     if let Ok(meta) = std::fs::metadata(config_path) {
         rmcp_time = meta.modified().unwrap_or(std::time::SystemTime::UNIX_EPOCH)
-            .duration_since(std::time::UNIX_EPOCH).unwrap().as_secs();
+            .duration_since(std::time::UNIX_EPOCH).unwrap_or(std::time::Duration::from_secs(0)).as_secs();
     }
 
     let shield_policy_path = "shield_policy.json";
@@ -90,7 +90,7 @@ fn load_combined_policy(config_path: &str, pubkey_hex: &str, template_patterns: 
     if std::path::Path::new(shield_policy_path).exists() {
         if let Ok(meta) = std::fs::metadata(shield_policy_path) {
             shield_time = meta.modified().unwrap_or(std::time::SystemTime::UNIX_EPOCH)
-                .duration_since(std::time::UNIX_EPOCH).unwrap().as_secs();
+                .duration_since(std::time::UNIX_EPOCH).unwrap_or(std::time::Duration::from_secs(0)).as_secs();
         }
         if let Ok(file) = std::fs::File::open(shield_policy_path) {
             if let Ok(shield_policy) = serde_json::from_reader::<_, policy::PolicyConfig>(file) {
@@ -125,6 +125,18 @@ async fn run_proxy(args: Vec<String>) -> io::Result<()> {
             std::process::exit(1);
         }
     };
+
+    let lock_path = format!("{}.lock", config_path);
+    let policy_exists = std::path::Path::new(&config_path).exists();
+    let lock_exists = std::path::Path::new(&lock_path).exists();
+
+    if !pubkey_hex.is_empty() || policy_exists || lock_exists {
+        let mut initial_firewall = shield_firewall::Firewall::new(&template_patterns).unwrap();
+        if let Err(e) = load_combined_policy(&config_path, &pubkey_hex, &template_patterns, &mut initial_firewall) {
+            eprintln!("RMCP Boot Fatal: Policy load failed: {}", e);
+            std::process::exit(1);
+        }
+    }
     
     let mut child = Command::new(&args[0])
             .args(&args[1..])
@@ -154,7 +166,8 @@ async fn run_proxy(args: Vec<String>) -> io::Result<()> {
             let mut current_firewall = shield_firewall::Firewall::new(&template_patterns_clone1).unwrap();
             let shield_policy_path = "shield_policy.json";
 
-            if !pubkey_hex_clone1.is_empty() {
+            let lock_path_clone1 = format!("{}.lock", config_path_clone1);
+            if !pubkey_hex_clone1.is_empty() || std::path::Path::new(&config_path_clone1).exists() || std::path::Path::new(&lock_path_clone1).exists() {
                 if let Ok((p, t1, t2)) = load_combined_policy(&config_path_clone1, &pubkey_hex_clone1, &template_patterns_clone1, &mut current_firewall) {
                     current_policy = p;
                     last_modified_rmcp = t1;
@@ -175,14 +188,14 @@ async fn run_proxy(args: Vec<String>) -> io::Result<()> {
                         stdin_reader.consume(pos + 1);
                         
                         // Policy Hot-Reloading
-                        if !pubkey_hex_clone1.is_empty() {
+                        if !pubkey_hex_clone1.is_empty() || std::path::Path::new(&config_path_clone1).exists() || std::path::Path::new(&lock_path_clone1).exists() {
                             let mut needs_reload = false;
                             if let Ok(meta) = std::fs::metadata(&config_path_clone1) {
-                                let mtime = meta.modified().unwrap_or(std::time::SystemTime::UNIX_EPOCH).duration_since(std::time::UNIX_EPOCH).unwrap().as_secs();
+                                let mtime = meta.modified().unwrap_or(std::time::SystemTime::UNIX_EPOCH).duration_since(std::time::UNIX_EPOCH).unwrap_or(std::time::Duration::from_secs(0)).as_secs();
                                 if mtime > last_modified_rmcp { needs_reload = true; }
                             }
                             if let Ok(meta) = std::fs::metadata(shield_policy_path) {
-                                let mtime = meta.modified().unwrap_or(std::time::SystemTime::UNIX_EPOCH).duration_since(std::time::UNIX_EPOCH).unwrap().as_secs();
+                                let mtime = meta.modified().unwrap_or(std::time::SystemTime::UNIX_EPOCH).duration_since(std::time::UNIX_EPOCH).unwrap_or(std::time::Duration::from_secs(0)).as_secs();
                                 if mtime > last_modified_shield { needs_reload = true; }
                             }
                             if needs_reload {
@@ -246,7 +259,8 @@ async fn run_proxy(args: Vec<String>) -> io::Result<()> {
             let mut current_firewall = shield_firewall::Firewall::new(&template_patterns_clone2).unwrap();
             let shield_policy_path = "shield_policy.json";
 
-            if !pubkey_hex_clone2.is_empty() {
+            let lock_path_clone2 = format!("{}.lock", config_path_clone2);
+            if !pubkey_hex_clone2.is_empty() || std::path::Path::new(&config_path_clone2).exists() || std::path::Path::new(&lock_path_clone2).exists() {
                 if let Ok((p, t1, t2)) = load_combined_policy(&config_path_clone2, &pubkey_hex_clone2, &template_patterns_clone2, &mut current_firewall) {
                     current_policy = p;
                     last_modified_rmcp = t1;
@@ -267,14 +281,14 @@ async fn run_proxy(args: Vec<String>) -> io::Result<()> {
                         stdout_reader.consume(pos + 1);
                         
                         // Policy Hot-Reloading
-                        if !pubkey_hex_clone2.is_empty() {
+                        if !pubkey_hex_clone2.is_empty() || std::path::Path::new(&config_path_clone2).exists() || std::path::Path::new(&lock_path_clone2).exists() {
                             let mut needs_reload = false;
                             if let Ok(meta) = std::fs::metadata(&config_path_clone2) {
-                                let mtime = meta.modified().unwrap_or(std::time::SystemTime::UNIX_EPOCH).duration_since(std::time::UNIX_EPOCH).unwrap().as_secs();
+                                let mtime = meta.modified().unwrap_or(std::time::SystemTime::UNIX_EPOCH).duration_since(std::time::UNIX_EPOCH).unwrap_or(std::time::Duration::from_secs(0)).as_secs();
                                 if mtime > last_modified_rmcp { needs_reload = true; }
                             }
                             if let Ok(meta) = std::fs::metadata(shield_policy_path) {
-                                let mtime = meta.modified().unwrap_or(std::time::SystemTime::UNIX_EPOCH).duration_since(std::time::UNIX_EPOCH).unwrap().as_secs();
+                                let mtime = meta.modified().unwrap_or(std::time::SystemTime::UNIX_EPOCH).duration_since(std::time::UNIX_EPOCH).unwrap_or(std::time::Duration::from_secs(0)).as_secs();
                                 if mtime > last_modified_shield { needs_reload = true; }
                             }
                             if needs_reload {

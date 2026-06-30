@@ -4,12 +4,12 @@ use std::fs;
 use ed25519_dalek::{SigningKey, Signer};
 use sha2::{Sha256, Digest};
 
-fn setup_signed_config() -> (String, String, String) {
-    let config_path = "test_rmcp.json";
-    let lock_path = "test_rmcp.json.lock";
+fn setup_signed_config(prefix: &str) -> (String, String, String) {
+    let config_path = format!("{}_rmcp.json", prefix);
+    let lock_path = format!("{}_rmcp.json.lock", prefix);
     let config_content = "{\"blocked_args\": [\"/etc/passwd\"]}";
     
-    fs::write(config_path, config_content).unwrap();
+    fs::write(&config_path, config_content).unwrap();
     
     let secret: [u8; 32] = [1; 32];
     let signing_key = SigningKey::from_bytes(&secret);
@@ -23,9 +23,9 @@ fn setup_signed_config() -> (String, String, String) {
     let signature = signing_key.sign(&config_hash);
     let signature_hex = hex::encode(signature.to_bytes());
     
-    fs::write(lock_path, signature_hex).unwrap();
+    fs::write(&lock_path, signature_hex).unwrap();
     
-    (config_path.to_string(), pubkey_hex, lock_path.to_string())
+    (config_path, pubkey_hex, lock_path)
 }
 
 fn cleanup_config(config: &str, lock: &str) {
@@ -44,6 +44,7 @@ fn get_mock_server() -> Vec<&'static str> {
 fn test_proxy_e2e_forwarding() {
     let mock_server = get_mock_server();
     let mut cmd = Command::new(env!("CARGO_BIN_EXE_rmcp"));
+    cmd.env("RMCP_CONFIG_PATH", "non_existent_config.json");
     for arg in mock_server {
         cmd.arg(arg);
     }
@@ -67,7 +68,7 @@ fn test_proxy_e2e_forwarding() {
 
 #[test]
 fn test_proxy_e2e_pattern_based_scrubbing() {
-    let (config_path, pubkey_hex, lock_path) = setup_signed_config();
+    let (config_path, pubkey_hex, lock_path) = setup_signed_config("scrub");
 
     let mock_server = get_mock_server();
     let mut cmd = Command::new(env!("CARGO_BIN_EXE_rmcp"));
@@ -94,4 +95,50 @@ fn test_proxy_e2e_pattern_based_scrubbing() {
     
     assert!(out_str.contains("-32603"));
     assert!(out_str.contains("Pattern-Based Argument Scrubbing"));
+}
+
+#[test]
+fn test_proxy_boot_signature_mismatch() {
+    let (config_path, _pubkey_hex, lock_path) = setup_signed_config("sig");
+
+    let mock_server = get_mock_server();
+    let mut cmd = Command::new(env!("CARGO_BIN_EXE_rmcp"));
+    for arg in mock_server {
+        cmd.arg(arg);
+    }
+
+    let output = cmd
+        .env("RMCP_CONFIG_PATH", &config_path)
+        .env("RMCP_PUBLIC_KEY", "deadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef")
+        .output()
+        .expect("Failed to spawn RMCP");
+
+    cleanup_config(&config_path, &lock_path);
+
+    let stderr_str = String::from_utf8_lossy(&output.stderr);
+    assert!(!output.status.success());
+    assert!(stderr_str.contains("RMCP Boot Fatal: Policy load failed"));
+}
+
+#[test]
+fn test_proxy_boot_missing_key_when_locked() {
+    let (config_path, _pubkey_hex, lock_path) = setup_signed_config("missing");
+
+    let mock_server = get_mock_server();
+    let mut cmd = Command::new(env!("CARGO_BIN_EXE_rmcp"));
+    for arg in mock_server {
+        cmd.arg(arg);
+    }
+
+    let output = cmd
+        .env("RMCP_CONFIG_PATH", &config_path)
+        .env_remove("RMCP_PUBLIC_KEY")
+        .output()
+        .expect("Failed to spawn RMCP");
+
+    cleanup_config(&config_path, &lock_path);
+
+    let stderr_str = String::from_utf8_lossy(&output.stderr);
+    assert!(!output.status.success());
+    assert!(stderr_str.contains("RMCP Boot Fatal: Policy load failed"));
 }
