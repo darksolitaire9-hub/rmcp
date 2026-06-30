@@ -62,7 +62,13 @@ pub fn load_policy(config_path: &str, pubkey_hex: &str) -> Result<PolicyConfig, 
 }
 
 pub fn generate_keys(config_path: &str) -> Result<String, Box<dyn std::error::Error>> {
-    let content = fs::read_to_string(config_path)?;
+    let content = fs::read_to_string(config_path).map_err(|e| {
+        if e.kind() == std::io::ErrorKind::NotFound {
+            format!("Policy file '{}' not found. Please create it or run 'rmcp install' to generate a default policy.", config_path)
+        } else {
+            format!("Failed to read policy file: {}", e)
+        }
+    })?;
     let lock_path = format!("{}.lock", config_path);
     
     // Generate a secure random keypair
