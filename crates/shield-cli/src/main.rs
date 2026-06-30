@@ -1,4 +1,3 @@
-use serde::{Deserialize, Serialize};
 use shield_mesa::{AuditEntry, Edge, ShieldGraph};
 use std::collections::HashSet;
 use std::env;

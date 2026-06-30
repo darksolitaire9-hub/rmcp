@@ -1,10 +1,11 @@
 {
   "nodes": [
-    "Tool:test",
-    "Agent",
-    "Tool:delete_database",
     "Tool:read_file",
-    "Server"
+    "Tool:query_db",
+    "Agent",
+    "Server",
+    "Tool:delete_database",
+    "Tool:test_ping"
   ],
   "edges": [
     {
@@ -14,7 +15,27 @@
     },
     {
       "source": "Agent",
-      "target": "Tool:test",
+      "target": "Tool:test_ping",
+      "label": "call"
+    },
+    {
+      "source": "Agent",
+      "target": "Tool:delete_database",
+      "label": "call"
+    },
+    {
+      "source": "Tool:read_file",
+      "target": "Server",
+      "label": "execute"
+    },
+    {
+      "source": "Tool:test_ping",
+      "target": "Server",
+      "label": "execute"
+    },
+    {
+      "source": "Agent",
+      "target": "Tool:query_db",
       "label": "call"
     },
     {
@@ -28,17 +49,7 @@
       "label": "response"
     },
     {
-      "source": "Agent",
-      "target": "Tool:delete_database",
-      "label": "call"
-    },
-    {
-      "source": "Tool:test",
-      "target": "Server",
-      "label": "execute"
-    },
-    {
-      "source": "Tool:read_file",
+      "source": "Tool:query_db",
       "target": "Server",
       "label": "execute"
     }

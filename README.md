@@ -26,6 +26,9 @@ To prevent Denial of Service (DoS) attacks where a malicious server spams you wi
 ### 4. Rel(AI)Build Hash-Chaining
 All dropped payloads and security violations are logged to `.rmcp_audit.log`. RMCP cryptographically binds these logs using an in-memory SHA-256 hash-chain, meaning an attacker who gains file-write access cannot tamper with or reorder past security logs without breaking the chain.
 
+### 5. Graph Defense Stack (rmcp-shield)
+RMCP includes `shield-cli`, a standalone utility that visualizes and analyzes your agent's interactions as a graph. It includes the **MESA (Ablation-based Edge Criticality Ranking)** algorithm which systematically simulates network failures to rank which tools are the most critical to your agent's operations.
+
 ---
 
 ## 🧑‍💻 How-To Guide for Humans
@@ -55,6 +58,18 @@ If you want to customize your rules, you can edit the `rmcp.json` file defining 
   "blocked_methods": ["delete_database"],
   "blocked_args": ["/etc/passwd", ".env"]
 }
+```
+
+### 3. Analyzing Traffic with rmcp-shield
+
+Since all traffic violations are securely hashed in `.rmcp_audit.log`, you can use `shield-cli` to visualize the tool calling graph:
+
+```bash
+# Build the graph of your Agent's tool usage
+cargo run -p shield-cli
+
+# Run MESA to find the most critical nodes and edges in your agent's workflow
+cargo run -p shield-cli -- mesa
 ```
 
 ---
