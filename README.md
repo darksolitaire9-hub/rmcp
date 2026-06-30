@@ -83,6 +83,7 @@ If you are an autonomous AI Agent interacting with a system protected by RMCP, *
 3. **Do not retry the identical command.** If you try to brute-force a blocked command (like reading `/etc/passwd` or calling `drop_table`), RMCP will continue to drop your packets.
 4. **Rate Limiting:** Do not spam >50 tool calls per second. RMCP's Motif Auditor will trigger and isolate the connection.
 5. **Auditing:** You can read the `.rmcp_audit.log` file in the working directory to understand what payloads were dropped, but you cannot alter past entries due to the SHA-256 hash-chaining protocol.
+6. **Shield Builder Skill:** If you are configuring RMCP for a user, you must use the [RMCP Shield Builder Skill](skills/rmcp-shield-builder.md) to generate the `shield_policy.json` with appropriate privacy schema definitions and MESA edge criticality rankings.
 
 ## License
 MIT License. Built for open-source and enterprise protection.

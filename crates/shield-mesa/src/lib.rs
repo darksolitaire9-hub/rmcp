@@ -20,10 +20,12 @@ pub struct Edge {
     pub label: String,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
-pub struct EdgeCriticality {
-    pub edge: Edge,
-    pub score: usize,
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct MesaEdge {
+    pub source: String,
+    pub target: String,
+    pub impact_score: f64,
+    pub policy_tier: String,
 }
 
 impl ShieldGraph {
@@ -58,8 +60,14 @@ impl ShieldGraph {
         visited.len()
     }
 
-    /// Ranks edges by their criticality (how many fewer nodes are reachable from 'Agent' when the edge is removed)
-    pub fn rank_edges_criticality(&self) -> Vec<EdgeCriticality> {
+    fn calculate_tier(impact: f64) -> String {
+        if impact >= 0.3 { "critical".to_string() }
+        else if impact >= 0.1 { "elevated".to_string() }
+        else { "standard".to_string() }
+    }
+
+    /// Ranks all edges by their criticality (how many fewer nodes are reachable from 'Agent' when the edge is removed)
+    pub fn rank_edges_criticality(&self) -> Vec<MesaEdge> {
         let baseline = self.reachable_nodes("Agent");
         let mut rankings = Vec::new();
 
@@ -69,16 +77,57 @@ impl ShieldGraph {
             
             let new_reachability = ablated_graph.reachable_nodes("Agent");
             let score = baseline.saturating_sub(new_reachability);
+            let impact_score = if baseline > 0 { score as f64 / baseline as f64 } else { 0.0 };
             
-            rankings.push(EdgeCriticality {
-                edge: removed_edge,
-                score,
+            rankings.push(MesaEdge {
+                source: removed_edge.source,
+                target: removed_edge.target,
+                impact_score,
+                policy_tier: Self::calculate_tier(impact_score),
             });
         }
 
-        // Sort descending by score
-        rankings.sort_by(|a, b| b.score.cmp(&a.score));
+        rankings.sort_by(|a, b| b.impact_score.partial_cmp(&a.impact_score).unwrap_or(std::cmp::Ordering::Equal));
         rankings
+    }
+
+    /// Incrementally re-ranks only edges that share a source or target with the new_edges.
+    pub fn incremental_rank(&self, mut previous_rankings: Vec<MesaEdge>, new_edges: &[Edge]) -> Vec<MesaEdge> {
+        let baseline = self.reachable_nodes("Agent");
+        
+        let mut affected_nodes = HashSet::new();
+        for edge in new_edges {
+            affected_nodes.insert(&edge.source);
+            affected_nodes.insert(&edge.target);
+        }
+
+        // Re-calculate for new edges and affected edges
+        let mut recomputed = HashSet::new();
+        for i in 0..self.edges.len() {
+            let edge = &self.edges[i];
+            if affected_nodes.contains(&edge.source) || affected_nodes.contains(&edge.target) {
+                let mut ablated_graph = self.clone();
+                let removed_edge = ablated_graph.edges.remove(i);
+                let new_reachability = ablated_graph.reachable_nodes("Agent");
+                let score = baseline.saturating_sub(new_reachability);
+                let impact_score = if baseline > 0 { score as f64 / baseline as f64 } else { 0.0 };
+                
+                recomputed.insert((removed_edge.source.clone(), removed_edge.target.clone()));
+                
+                // Remove old ranking if exists
+                previous_rankings.retain(|r| !(r.source == removed_edge.source && r.target == removed_edge.target));
+                
+                previous_rankings.push(MesaEdge {
+                    source: removed_edge.source,
+                    target: removed_edge.target,
+                    impact_score,
+                    policy_tier: Self::calculate_tier(impact_score),
+                });
+            }
+        }
+
+        previous_rankings.sort_by(|a, b| b.impact_score.partial_cmp(&a.impact_score).unwrap_or(std::cmp::Ordering::Equal));
+        previous_rankings
     }
 }
 
@@ -103,8 +152,10 @@ mod tests {
         let rankings = graph.rank_edges_criticality();
         
         // Removing Agent -> Tool:A cuts off Tool:A and Server (2 nodes)
+        // Baseline is 4, new reachability is 2, score is 2. Impact is 2/4 = 0.5.
         let first = &rankings[0];
-        assert_eq!(first.edge.target, "Tool:A");
-        assert_eq!(first.score, 2);
+        assert_eq!(first.target, "Tool:A");
+        assert_eq!(first.impact_score, 0.5);
+        assert_eq!(first.policy_tier, "critical");
     }
 }

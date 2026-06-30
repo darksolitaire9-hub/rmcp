@@ -18,3 +18,5 @@ We explicitly credit the following theoretical frameworks and research papers wh
 - **VIGIL (Paper 27):** "Runtime Enforcement of Behavioral Specifications". **Inspired by** this paper, we built a pattern-based argument scrubber. Note: We do not currently implement full SMT-based trace verification as described in the paper.
 - **The Unfireable Safety Kernel (Paper 43):** "Execution-Time AI Alignment". Provides the theoretical basis for our Kani bounded-model-checking verifications.
 - **SEO Motif Auditor (Paper 30):** "Systematic identification of statistically significant network measures". Inspires our anomaly detection for anomalous tool-call sequences (the adjacent motif-hub algo).
+- **MESA (Paper 89):** "Minimalist Embedded Subgraph Ablation". Provides the theoretical basis for our `shield-mesa` incremental criticality ranking algorithm.
+- **Agents That Know Too Much (Paper 12):** "The Threat of Privacy-Invasive AI Agents". Inspires our `shield-firewall` privacy validation and PII detection engine.

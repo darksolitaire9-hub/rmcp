@@ -1,15 +1,29 @@
-use serde::Deserialize;
+
 use std::fs;
 use sha2::{Sha256, Digest};
 use ed25519_dalek::{VerifyingKey, Signature, Verifier};
 use std::convert::TryInto;
 
-#[derive(Deserialize, Clone, Default)]
+use std::collections::HashMap;
+
+#[derive(serde::Serialize, serde::Deserialize, Clone, Default)]
+pub struct ToolSchema {
+    #[serde(default)]
+    pub allowed_fields: Vec<String>,
+    #[serde(default)]
+    pub pii_patterns: Vec<String>,
+}
+
+#[derive(serde::Serialize, serde::Deserialize, Clone, Default)]
 pub struct PolicyConfig {
+    #[serde(default)]
+    pub shield_version: String,
     #[serde(default)]
     pub blocked_methods: Vec<String>,
     #[serde(default)]
     pub blocked_args: Vec<String>,
+    #[serde(default)]
+    pub tool_schemas: HashMap<String, ToolSchema>,
 }
 
 pub fn load_policy(config_path: &str, pubkey_hex: &str) -> Result<PolicyConfig, String> {

@@ -66,13 +66,7 @@ async fn main() -> io::Result<()> {
         }
     };
     
-    let firewall = match shield_firewall::Firewall::new(&template_patterns) {
-        Ok(fw) => std::sync::Arc::new(fw),
-        Err(e) => {
-            eprintln!("RMCP SECURITY FAULT: {}", e);
-            std::process::exit(1);
-        }
-    };
+
 
     let mut child = Command::new(&args[1])
             .args(&args[2..])
@@ -124,18 +118,51 @@ async fn main() -> io::Result<()> {
             let mut host_stdout = tokio::io::stdout();
             let mut line_buf = Vec::new();
             
-            let mut last_modified: u64 = 0;
+            let mut last_modified_rmcp: u64 = 0;
+            let mut last_modified_shield: u64 = 0;
             let mut current_policy = policy::PolicyConfig::default();
             
-            // Attempt initial load, if keys are provided. Fail closed if tamper detected.
-            if !pubkey_hex_clone.is_empty() {
-                match policy::load_policy(&config_path_clone, &pubkey_hex_clone) {
-                    Ok(p) => {
-                        current_policy = p;
-                        if let Ok(meta) = std::fs::metadata(&config_path_clone) {
-                            last_modified = meta.modified().unwrap_or(std::time::SystemTime::UNIX_EPOCH)
-                                .duration_since(std::time::UNIX_EPOCH).unwrap().as_secs();
+            let mut current_firewall = shield_firewall::Firewall::new(&template_patterns).unwrap();
+
+            let shield_policy_path = "shield_policy.json";
+
+            let load_combined_policy = |config_path: &str, pubkey_hex: &str, firewall: &mut shield_firewall::Firewall| -> Result<(policy::PolicyConfig, u64, u64), String> {
+                let mut policy = policy::load_policy(config_path, pubkey_hex)?;
+                let mut rmcp_time = 0;
+                if let Ok(meta) = std::fs::metadata(config_path) {
+                    rmcp_time = meta.modified().unwrap_or(std::time::SystemTime::UNIX_EPOCH)
+                        .duration_since(std::time::UNIX_EPOCH).unwrap().as_secs();
+                }
+
+                let mut shield_time = 0;
+                if std::path::Path::new(shield_policy_path).exists() {
+                    if let Ok(meta) = std::fs::metadata(shield_policy_path) {
+                        shield_time = meta.modified().unwrap_or(std::time::SystemTime::UNIX_EPOCH)
+                            .duration_since(std::time::UNIX_EPOCH).unwrap().as_secs();
+                    }
+                    if let Ok(file) = std::fs::File::open(shield_policy_path) {
+                        if let Ok(shield_policy) = serde_json::from_reader::<_, policy::PolicyConfig>(file) {
+                            policy.tool_schemas = shield_policy.tool_schemas;
                         }
+                    }
+                }
+
+                // Rebuild firewall schemas
+                *firewall = shield_firewall::Firewall::new(&template_patterns).unwrap();
+                for (tool_name, schema) in &policy.tool_schemas {
+                    let _ = firewall.add_tool_schema(tool_name.clone(), schema.allowed_fields.clone(), schema.pii_patterns.clone());
+                }
+
+                Ok((policy, rmcp_time, shield_time))
+            };
+
+            // Attempt initial load
+            if !pubkey_hex_clone.is_empty() {
+                match load_combined_policy(&config_path_clone, &pubkey_hex_clone, &mut current_firewall) {
+                    Ok((p, t1, t2)) => {
+                        current_policy = p;
+                        last_modified_rmcp = t1;
+                        last_modified_shield = t2;
                     }
                     Err(e) => {
                         eprintln!("RMCP Fatal: Config integrity failure on startup: {}", e);
@@ -143,7 +170,6 @@ async fn main() -> io::Result<()> {
                     }
                 }
             }
-            
             
             loop {
                 let buf = match stdout_reader.fill_buf().await {
@@ -158,14 +184,25 @@ async fn main() -> io::Result<()> {
                         stdout_reader.consume(pos + 1);
                         
                         // Policy Hot-Reloading
-                        if !pubkey_hex_clone.is_empty() && let Ok(meta) = std::fs::metadata(&config_path_clone) {
-                            let mtime = meta.modified().unwrap_or(std::time::SystemTime::UNIX_EPOCH)
-                                .duration_since(std::time::UNIX_EPOCH).unwrap().as_secs();
-                            if mtime > last_modified {
-                                match policy::load_policy(&config_path_clone, &pubkey_hex_clone) {
-                                    Ok(p) => {
+                        if !pubkey_hex_clone.is_empty() {
+                            let mut needs_reload = false;
+                            if let Ok(meta) = std::fs::metadata(&config_path_clone) {
+                                let mtime = meta.modified().unwrap_or(std::time::SystemTime::UNIX_EPOCH)
+                                    .duration_since(std::time::UNIX_EPOCH).unwrap().as_secs();
+                                if mtime > last_modified_rmcp { needs_reload = true; }
+                            }
+                            if let Ok(meta) = std::fs::metadata(shield_policy_path) {
+                                let mtime = meta.modified().unwrap_or(std::time::SystemTime::UNIX_EPOCH)
+                                    .duration_since(std::time::UNIX_EPOCH).unwrap().as_secs();
+                                if mtime > last_modified_shield { needs_reload = true; }
+                            }
+
+                            if needs_reload {
+                                match load_combined_policy(&config_path_clone, &pubkey_hex_clone, &mut current_firewall) {
+                                    Ok((p, t1, t2)) => {
                                         current_policy = p;
-                                        last_modified = mtime;
+                                        last_modified_rmcp = t1;
+                                        last_modified_shield = t2;
                                     }
                                     Err(e) => {
                                         eprintln!("RMCP Fatal: Config tampered during hot-reload: {}", e);
@@ -175,8 +212,7 @@ async fn main() -> io::Result<()> {
                             }
                         }
                         
-                        let firewall_clone = std::sync::Arc::clone(&firewall);
-                        match proxy::process_payload(&line_buf, max_payload_size, &current_policy.blocked_methods, &current_policy.blocked_args, &firewall_clone) {
+                        match proxy::process_payload(&line_buf, max_payload_size, &current_policy.blocked_methods, &current_policy.blocked_args, &current_firewall) {
                             Ok(true) => {
                                 if host_stdout.write_all(&line_buf).await.is_err() { break; }
                                 let _ = host_stdout.flush().await;

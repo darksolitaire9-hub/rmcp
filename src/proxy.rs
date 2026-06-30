@@ -96,11 +96,17 @@ pub fn extract_jsonrpc_id(bytes: &[u8]) -> Value {
 
 pub fn synthesize_error(bytes: &[u8], reason: &str) -> String {
     let id = extract_jsonrpc_id(bytes);
+    let message = if reason.starts_with("Shield:") {
+        format!("RMCP {}", reason)
+    } else {
+        format!("RMCP Security: {}", reason)
+    };
+    
     let error_msg = serde_json::json!({
         "jsonrpc": "2.0",
         "error": {
             "code": -32603,
-            "message": format!("RMCP Security: {}", reason)
+            "message": message
         },
         "id": id
     });

@@ -1,0 +1,78 @@
+{
+  "blocked_methods": [],
+  "blocked_args": [],
+  "mesa_edges": [
+    {
+      "source": "Agent",
+      "target": "Tool:test_ping",
+      "impact_score": 0.16666666666666666,
+      "policy_tier": "elevated"
+    },
+    {
+      "source": "Agent",
+      "target": "Tool:read_file",
+      "impact_score": 0.16666666666666666,
+      "policy_tier": "elevated"
+    },
+    {
+      "source": "Agent",
+      "target": "Tool:query_db",
+      "impact_score": 0.16666666666666666,
+      "policy_tier": "elevated"
+    },
+    {
+      "source": "Agent",
+      "target": "Tool:delete_database",
+      "impact_score": 0.16666666666666666,
+      "policy_tier": "elevated"
+    },
+    {
+      "source": "Tool:query_db",
+      "target": "Server",
+      "impact_score": 0.0,
+      "policy_tier": "standard"
+    },
+    {
+      "source": "Server",
+      "target": "Agent",
+      "impact_score": 0.0,
+      "policy_tier": "standard"
+    },
+    {
+      "source": "Tool:test_ping",
+      "target": "Server",
+      "impact_score": 0.0,
+      "policy_tier": "standard"
+    },
+    {
+      "source": "Tool:read_file",
+      "target": "Server",
+      "impact_score": 0.0,
+      "policy_tier": "standard"
+    },
+    {
+      "source": "Tool:delete_database",
+      "target": "Server",
+      "impact_score": 0.0,
+      "policy_tier": "standard"
+    }
+  ],
+  "tool_schemas": {
+    "test_ping": {
+      "allowed_fields": [],
+      "pii_patterns": []
+    },
+    "query_db": {
+      "allowed_fields": [],
+      "pii_patterns": []
+    },
+    "read_file": {
+      "allowed_fields": [],
+      "pii_patterns": []
+    },
+    "delete_database": {
+      "allowed_fields": [],
+      "pii_patterns": []
+    }
+  }
+}
