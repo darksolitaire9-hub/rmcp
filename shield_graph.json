@@ -1,0 +1,46 @@
+{
+  "nodes": [
+    "Tool:test",
+    "Agent",
+    "Tool:delete_database",
+    "Tool:read_file",
+    "Server"
+  ],
+  "edges": [
+    {
+      "source": "Tool:delete_database",
+      "target": "Server",
+      "label": "execute"
+    },
+    {
+      "source": "Agent",
+      "target": "Tool:test",
+      "label": "call"
+    },
+    {
+      "source": "Agent",
+      "target": "Tool:read_file",
+      "label": "call"
+    },
+    {
+      "source": "Server",
+      "target": "Agent",
+      "label": "response"
+    },
+    {
+      "source": "Agent",
+      "target": "Tool:delete_database",
+      "label": "call"
+    },
+    {
+      "source": "Tool:test",
+      "target": "Server",
+      "label": "execute"
+    },
+    {
+      "source": "Tool:read_file",
+      "target": "Server",
+      "label": "execute"
+    }
+  ]
+}

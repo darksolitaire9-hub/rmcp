@@ -19,3 +19,10 @@ tempfile = "3.8"
 
 [lints.rust]
 unexpected_cfgs = { level = "allow", check-cfg = ['cfg(kani)'] }
+
+[workspace]
+members = [
+    "crates/shield-cli",
+    "crates/shield-mesa",
+    "crates/shield-firewall"
+]
