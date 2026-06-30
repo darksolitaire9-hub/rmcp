@@ -1,30 +1,59 @@
 use serde_json::Value;
 use std::fs::OpenOptions;
 use std::io::Write;
-use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{SystemTime, UNIX_EPOCH};
 use std::sync::RwLock;
 use sha2::{Sha256, Digest};
 
 static AUDIT_CHAIN: RwLock<[u8; 32]> = RwLock::new([0u8; 32]);
 
-static CALL_COUNT: AtomicUsize = AtomicUsize::new(0);
-static LAST_CALL_TIME: AtomicUsize = AtomicUsize::new(0);
+// Rate Limiter (inspired by Paper 30): Detects high-frequency call bursts.
+// Packed AtomicU64: upper 32 bits = second-timestamp, lower 32 bits = call count.
+// Single compare_exchange eliminates TOCTOU between timestamp and count,
+// and `now > last_ts` (not `==`) prevents NTP clock-jump bypass.
+static RATE_STATE: AtomicU64 = AtomicU64::new(0);
 
-// SEO Motif Auditor (Paper 30): Detects high-frequency call clusters (motif-hubs)
-pub fn check_motif_hub_anomaly() -> Result<(), String> {
-    let now = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs() as usize;
-    let last = LAST_CALL_TIME.swap(now, Ordering::Relaxed);
-    
-    if now == last {
-        let count = CALL_COUNT.fetch_add(1, Ordering::Relaxed);
-        if count >= 50 {
-            return Err("SEO Motif Auditor: Rate Limit Exceeded. Detected anomalous high-frequency tool call cluster (Motif-Hub). Possible autonomous loop.".to_string());
+fn rate_pack(ts: u32, count: u32) -> u64 {
+    ((ts as u64) << 32) | (count as u64)
+}
+fn rate_unpack(val: u64) -> (u32, u32) {
+    ((val >> 32) as u32, val as u32)
+}
+
+pub fn check_rate_limit() -> Result<(), String> {
+    let now = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap()
+        .as_secs() as u32; // ponytail: u32 overflows in year 2106, good enough
+
+    loop {
+        let current = RATE_STATE.load(Ordering::Relaxed);
+        let (last_ts, count) = rate_unpack(current);
+
+        let (new_ts, new_count) = if now > last_ts {
+            (now, 1) // New second window — reset
+        } else {
+            (last_ts, count + 1) // Same or backward clock — keep counting
+        };
+
+        if new_count > 50 {
+            return Err(
+                "RMCP Security Error: Rate Limit Exceeded: More than 50 calls/second detected. \
+                 Possible autonomous loop or DoS attack.".to_string()
+            );
         }
-    } else {
-        CALL_COUNT.store(1, Ordering::Relaxed);
+
+        match RATE_STATE.compare_exchange_weak(
+            current,
+            rate_pack(new_ts, new_count),
+            Ordering::Relaxed,
+            Ordering::Relaxed,
+        ) {
+            Ok(_) => return Ok(()),
+            Err(_) => continue, // Another thread beat us, retry
+        }
     }
-    Ok(())
 }
 
 // Rel(AI)Build Audit Log (Paper 14)
@@ -44,38 +73,44 @@ fn log_audit(payload: &[u8]) {
         let _ = file.write_all(b"\n");
     }
 }
-pub fn process_payload(line_bytes: &[u8], max_payload_size: usize, blocked_methods: &[String], blocked_args: &[String], firewall: &shield_firewall::Firewall) -> Result<bool, String> {
+pub fn process_payload(line_bytes: &[u8], max_payload_size: usize, blocked_methods: &[String], blocked_args: &[String], firewall: &shield_firewall::Firewall) -> Result<Option<Vec<u8>>, String> {
     if line_bytes.len() > max_payload_size {
         return Err("Payload exceeds maximum allowed size".to_string());
     }
 
     let line_str = std::str::from_utf8(line_bytes).unwrap_or("").trim();
     if line_str.is_empty() {
-        return Ok(false);
+        return Ok(None);
     }
 
     log_audit(line_bytes); // Rel(AI)Build Logging
 
     #[cfg(not(test))]
-    check_motif_hub_anomaly()?; // SEO Motif Auditor
+    check_rate_limit()?; // Rate limiter (inspired by Paper 30)
 
     let parsed: Value = match serde_json::from_str(line_str) {
         Ok(v) => v,
         Err(_) => return Err("Invalid JSON".to_string()),
     };
+    
+    // AST Normalization to prevent TOCTOU and Unicode Escaping attacks
+    let normalized_payload = parsed.to_string();
 
-    if let Some(m) = parsed.get("method").and_then(|v| v.as_str())
-        && blocked_methods.contains(&m.to_string())
-    {
-        return Err(format!("Method '{}' is blocked by enterprise policy", m));
+    if let Some(m) = parsed.get("method").and_then(|v| v.as_str()) {
+        let clean_m = m.replace('\0', "").trim().to_string();
+        if blocked_methods.contains(&clean_m) {
+            return Err(format!("Method '{}' is blocked by enterprise policy", clean_m));
+        }
     }
 
-    // Delegate deep pattern inspection to Firewall
-    if let Err(e) = firewall.scan_payload(line_str, blocked_args) {
+    // Delegate deep pattern inspection to Firewall (using Normalized AST)
+    if let Err(e) = firewall.scan_payload(&parsed, &normalized_payload, blocked_args) {
         return Err(e);
     }
     
-    Ok(true)
+    let mut out_bytes = normalized_payload.into_bytes();
+    out_bytes.push(b'\n');
+    Ok(Some(out_bytes))
 }
 
 pub fn extract_jsonrpc_id(bytes: &[u8]) -> Value {
@@ -102,11 +137,30 @@ pub fn synthesize_error(bytes: &[u8], reason: &str) -> String {
         format!("RMCP Security: {}", reason)
     };
     
+    let code_string = if reason.contains("Rate Limit Exceeded") {
+        "RMCP_RATE_LIMIT"
+    } else if reason.contains("Method") && reason.contains("blocked") {
+        "RMCP_BLOCKED_METHOD"
+    } else if reason.contains("FIREWALL BLOCK") {
+        "RMCP_FIREWALL_BLOCK"
+    } else if reason.contains("PII DETECTED") {
+        "RMCP_PII_DETECTED"
+    } else if reason.contains("Argument Scrubbing") || reason.contains("ShareLock Mitigation") {
+        "RMCP_BLOCKED_ARGUMENT"
+    } else if reason.contains("Template Match") {
+        "RMCP_TEMPLATE_MATCH"
+    } else {
+        "RMCP_SECURITY_ERROR"
+    };
+    
     let error_msg = serde_json::json!({
         "jsonrpc": "2.0",
         "error": {
             "code": -32603,
-            "message": message
+            "message": message,
+            "data": {
+                "reason": code_string
+            }
         },
         "id": id
     });
@@ -124,7 +178,7 @@ mod tests {
         let payload = json!({"jsonrpc": "2.0", "method": "test", "id": 1}).to_string();
         let result = process_payload(payload.as_bytes(), 1024 * 1024, &[], &[], &firewall);
         assert!(result.is_ok());
-        assert_eq!(result.unwrap(), true);
+        assert!(result.unwrap().is_some());
     }
 
     #[test]
@@ -232,19 +286,50 @@ mod tests {
         assert_eq!(parsed["error"]["message"], "RMCP Security: Policy blocked");
     }
     #[test]
-    fn test_seo_motif_auditor() {
+    fn test_rate_limiter() {
         // Reset state
-        super::CALL_COUNT.store(0, std::sync::atomic::Ordering::Relaxed);
-        super::LAST_CALL_TIME.store(0, std::sync::atomic::Ordering::Relaxed);
-        
+        super::RATE_STATE.store(0, std::sync::atomic::Ordering::Relaxed);
+
         for _ in 0..50 {
-            assert!(super::check_motif_hub_anomaly().is_ok());
+            assert!(super::check_rate_limit().is_ok());
         }
-        
-        // The 51st call within the same second should trigger the motif-hub anomaly
-        let result = super::check_motif_hub_anomaly();
+        // The 51st call within the same second should trigger
+        let result = super::check_rate_limit();
         assert!(result.is_err());
-        assert!(result.unwrap_err().contains("SEO Motif Auditor"));
+        assert!(result.unwrap_err().contains("Rate Limit Exceeded"));
+    }
+
+    #[test]
+    fn test_rate_limiter_clock_backward_safe() {
+        // Simulate: store a timestamp far in the future (clock was ahead)
+        // The rate limiter must NOT reset the counter — it must keep counting.
+        let future_ts: u32 = u32::MAX;
+        super::RATE_STATE.store(
+            super::rate_pack(future_ts, 45),
+            std::sync::atomic::Ordering::Relaxed,
+        );
+
+        // now < future_ts, so we stay in the "keep counting" branch
+        for _ in 0..5 {
+            assert!(super::check_rate_limit().is_ok());
+        }
+        // 45 + 5 = 50, next should fail
+        let result = super::check_rate_limit();
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("Rate Limit Exceeded"));
+    }
+
+    #[test]
+    fn test_null_byte_injection_bypass() {
+        // CWE-626: Null byte in method name must be stripped before blocklist check.
+        // Without sanitization, "delete_database\0" != "delete_database" bypasses the block.
+        let firewall = shield_firewall::Firewall::new(&[]).unwrap();
+        let payload = b"{\"jsonrpc\": \"2.0\", \"method\": \"delete_database\\u0000\", \"id\": 1}";
+        let blocked = vec!["delete_database".to_string()];
+
+        let result = process_payload(payload, 1024 * 1024, &blocked, &[], &firewall);
+        assert!(result.is_err(), "Null byte injection must NOT bypass the blocklist");
+        assert!(result.unwrap_err().contains("blocked by enterprise policy"));
     }
 }
 
@@ -260,10 +345,11 @@ mod verification {
         // Verify that any arbitrary 128-byte slice processed by the proxy
         // will never panic, guaranteeing the Unfireable Safety Kernel property (Paper 43).
         let payload: [u8; 128] = kani::any();
-        let blocked = vec![String::from("malicious_tool")];
-        let engine = crate::template::TemplateEngine::build("").unwrap();
+        let blocked_methods = vec![String::from("malicious_tool")];
+        let blocked_args = vec![String::from("/etc/passwd")];
+        let firewall = shield_firewall::Firewall::new(&[]).unwrap();
         
-        let _ = process_payload(&payload, max_size, &blocked, &[], &engine);
+        let _ = process_payload(&payload, max_size, &blocked_methods, &blocked_args, &firewall);
     }
 
     #[kani::proof]

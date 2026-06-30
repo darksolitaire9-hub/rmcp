@@ -17,7 +17,7 @@ You are an agent responsible for configuring the **RMCP Shield** security gatewa
 
 ```json
 {
-  "shield_version": "0.2.0",
+  "shield_version": "0.3.2",
   "blocked_methods": ["delete_database"],
   "blocked_args": ["/etc/passwd", "API_KEY"],
   "tool_schemas": {

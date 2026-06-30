@@ -41,36 +41,33 @@ impl Firewall {
         Ok(())
     }
 
-    pub fn scan_payload(&self, payload: &str, blocked_args: &[String]) -> Result<(), String> {
+    pub fn scan_payload(&self, parsed: &Value, normalized_payload: &str, blocked_args: &[String]) -> Result<(), String> {
         if !blocked_args.is_empty() {
-            if let Ok(parsed) = serde_json::from_str::<Value>(payload) {
-                if let Some(params) = parsed.get("params") {
-                    let params_str = params.to_string();
-                    for blocked_arg in blocked_args {
-                        if params_str.contains(blocked_arg) {
-                            return Err(format!("Pattern-Based Argument Scrubbing: Argument pattern '{}' is blocked", blocked_arg));
-                        }
+            if let Some(params) = parsed.get("params") {
+                let params_str = params.to_string();
+                for blocked_arg in blocked_args {
+                    if params_str.contains(blocked_arg) {
+                        return Err(format!("Pattern-Based Argument Scrubbing: Argument pattern '{}' is blocked", blocked_arg));
                     }
                 }
-                
-                if let Some(result) = parsed.get("result") {
-                    let result_str = result.to_string();
-                    for blocked_arg in blocked_args {
-                        if result_str.contains(blocked_arg) {
-                            return Err(format!("ShareLock Mitigation: Blocked pattern '{}' detected in server response", blocked_arg));
-                        }
+            }
+            
+            if let Some(result) = parsed.get("result") {
+                let result_str = result.to_string();
+                for blocked_arg in blocked_args {
+                    if result_str.contains(blocked_arg) {
+                        return Err(format!("ShareLock Mitigation: Blocked pattern '{}' detected in server response", blocked_arg));
                     }
                 }
             }
         }
 
-        if self.ac_global.is_match(payload) {
+        if self.ac_global.is_match(normalized_payload) {
             return Err("Template Match (Aho-Corasick Security Rules)".to_string());
         }
 
-        if let Ok(parsed) = serde_json::from_str::<Value>(payload) {
-            if let Some(method) = parsed.get("method").and_then(|m| m.as_str()) {
-                if let Some(schema) = self.tool_schemas.get(method) {
+        if let Some(method) = parsed.get("method").and_then(|m| m.as_str()) {
+            if let Some(schema) = self.tool_schemas.get(method) {
                     if let Some(params) = parsed.get("params").and_then(|p| p.as_object()) {
                         for (key, val) in params {
                             // Only check fields if allowed_fields is NOT empty (empty means allow all for backward compat, or maybe the other way around)
@@ -92,7 +89,6 @@ impl Firewall {
                     }
                 }
             }
-        }
 
         Ok(())
     }
@@ -103,16 +99,22 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_firewall_blocks_substring() {
-        let fw = Firewall::new(&[]).unwrap();
-        let payload = r#"{"jsonrpc":"2.0","method":"read","params":{"path":"/etc/passwd"}}"#;
-        assert!(fw.scan_payload(payload, &["/etc/passwd".to_string()]).is_err());
+    fn test_pattern_blocking() {
+        let patterns = vec!["/etc/passwd".to_string(), "DROP TABLE".to_string()];
+        let fw = Firewall::new(&patterns).unwrap();
+        
+        let payload = r#"{"jsonrpc":"2.0","method":"read_file","params":{"path":"/etc/passwd"}}"#;
+        let parsed: Value = serde_json::from_str(payload).unwrap();
+        assert!(fw.scan_payload(&parsed, payload, &["/etc/passwd".to_string()]).is_err());
     }
 
     #[test]
-    fn test_firewall_aho_corasick() {
-        let fw = Firewall::new(&["malicious_pattern".to_string()]).unwrap();
-        let payload = r#"{"jsonrpc":"2.0","method":"read","params":{"data":"some malicious_pattern string"}}"#;
-        assert!(fw.scan_payload(payload, &[]).is_err());
+    fn test_template_matching() {
+        let patterns = vec!["/etc/passwd".to_string(), "DROP TABLE".to_string()];
+        let fw = Firewall::new(&patterns).unwrap();
+        
+        let payload = r#"{"jsonrpc":"2.0","method":"query","params":{"sql":"DROP TABLE users"}}"#;
+        let parsed: Value = serde_json::from_str(payload).unwrap();
+        assert!(fw.scan_payload(&parsed, payload, &[]).is_err());
     }
 }

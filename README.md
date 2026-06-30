@@ -1,16 +1,17 @@
-# RMCP 🛡️
+# RMCP 🛡️ (v0.3.2 Enterprise Gateway)
 
 ![RMCP Pattern-Based Argument Scrubbing Intercepting a Blocked Call](assets/demo.gif)
 *Watch RMCP instantly drop a malicious payload from reaching the agent context window.*
 
-**Rust Model Context Protocol Security Gateway**
+**Zero-Trust AST-Normalized Security Gateway for the Model Context Protocol**
 
-The Model Context Protocol (MCP) bridges the gap between AI Agents (like Cursor, Windsurf, or Claude) and your local environment. But if a malicious server sends an injection payload or tries to poison the AI's context window with gigabytes of garbage data, the AI has no defense.
+The Model Context Protocol (MCP) bridges the gap between AI Agents (like Cursor, Windsurf, or Claude) and your local environment. But if a malicious server sends an injection payload, or a compromised agent tries to exfiltrate data, the system has no defense.
 
-**RMCP** is a lightweight proxy written in Rust that intercepts and strictly filters MCP traffic *before* it reaches the agent.
+**RMCP** is a high-performance, full-duplex proxy written in Rust that intercepts, parses, normalizes, and strictly filters all MCP traffic *in both directions* before it executes.
 
 ## Table of Contents
 - [Core Features & Defense Mechanisms](#core-features--defense-mechanisms)
+- [Security Boundaries & Gap Analysis](#-security-boundaries--gap-analysis)
 - [How-To Guide for Humans (CLI ELI5)](#-how-to-guide-for-humans)
 - [Instructions for AI Agents](#-instructions-for-ai-agents)
 - [Dynamic Templates & Architecture](#%EF%B8%8F-dynamic-templates--fail-closed-architecture)
@@ -18,23 +19,37 @@ The Model Context Protocol (MCP) bridges the gap between AI Agents (like Cursor,
 
 ## Core Features & Defense Mechanisms
 
-### 1. Pattern-Based Argument Scrubbing & Cryptographic Policies
-RMCP acts as a behavioral firewall. You can define specific tools and arguments that are **blocked** from execution.
+### 1. Full-Duplex AST Normalization (Fixing TOCTOU & Escapes)
+Unlike basic string-matching proxies, RMCP runs a **Full-Duplex AST-Level Re-Serialization Pipeline**. Every JSON-RPC packet (inbound and outbound) is parsed into a strict Rust AST, fully unescaped, and re-serialized. This mathematically guarantees protection against Time-Of-Check to Time-Of-Use (TOCTOU) parsing differentials and Unicode-escaping firewall bypasses.
+
+### 2. Pattern-Based Argument Scrubbing (VIGIL-Inspired)
+RMCP acts as a behavioral firewall. You can define specific tools and arguments that are **blocked** from execution. 
+*Academic Attribution: Inspired by the enforcement principles in VIGIL (arXiv:2606.26524v1). Full trace-level SMT verification is planned for future releases.*
+
 To prevent malicious agents from rewriting their own blocklists, RMCP enforces **Ed25519 Signature Verification** and **SHA-256 Config Integrity**. If a user's `rmcp.json` file is tampered with on disk, RMCP's Fail-Closed architecture immediately shuts down the connection.
 
-### 2. The Context Window Firewall (1MB Limit)
+### 3. The Context Window Firewall (1MB Limit & ShareLock Defense)
 RMCP enforces a strict `1MB` hard limit on all JSON-RPC responses. If a tool returns too much data, RMCP instantly drops the payload and gracefully synthesizes a JSON-RPC Server Error (`-32603`). 
+*Academic Attribution: Implements the core ShareLock Poisoning mitigation (arXiv:2606.30510v1).*
 
-This mathematically guarantees the AI's core instructions can never be overwritten by **ShareLock Poisoning**. (In plain English: a ShareLock attack is when a hacker hides a massive malicious payload by splitting it into tiny pieces across dozens of fake tools. By capping the total size, RMCP makes this impossible).
+### 4. Rate Limiter (inspired by Paper 30)
+RMCP includes a **Rate Limiter** that tracks the frequency of incoming requests and automatically cuts off any connection that fires more than 50 calls per second.
 
-### 3. Motif Auditor Rate-Limiting
-To prevent Denial of Service (DoS) attacks where a malicious server spams you with thousands of tiny requests, RMCP includes a **Motif Auditor**. Think of the Motif Auditor as a bouncer: it tracks the rhythm (motif) of incoming requests and automatically cuts off any connection that fires more than 50 calls per second.
-
-### 4. Rel(AI)Build Hash-Chaining
+### 5. Rel(AI)Build Hash-Chaining
 All dropped payloads and security violations are logged to `.rmcp_audit.log`. RMCP cryptographically binds these logs using an in-memory SHA-256 hash-chain, meaning an attacker who gains file-write access cannot tamper with or reorder past security logs without breaking the chain.
 
-### 5. Graph Defense Stack (rmcp-shield)
-RMCP includes `shield-cli`, a standalone utility that visualizes and analyzes your agent's interactions as a graph. It includes the **MESA (Ablation-based Edge Criticality Ranking)** algorithm which systematically simulates network failures to rank which tools are the most critical to your agent's operations.
+### 6. Graph Defense Stack (rmcp-shield)
+RMCP includes `shield-cli`, a standalone utility that visualizes your agent's interactions as a graph. It uses the **Ablation-Ranked Edge Hardening** algorithm to systematically simulate network failures and rank which tools are the most critical to your agent's operations.
+*Academic Attribution: Implements the ablation probe from MESA (arXiv:2606.30602v1). MESA's full 8-signal composite ranking is planned for future releases.*
+
+---
+
+## 🚨 Security Boundaries & Gap Analysis
+
+For Enterprise Security teams evaluating RMCP, the following boundaries are explicit architectural decisions:
+
+1. **`stderr` Diagnostic Bypass**: RMCP actively filters `stdin` and `stdout` (the primary JSON-RPC channels). However, `stderr` is passed completely raw to the host's `stderr` stream. This ensures standard error logs remain readable for debugging, but means `stderr` is not scrubbed for PII or blocked patterns.
+2. **Hot-Reload Race Conditions**: RMCP constantly polls `rmcp.json` for hot-reloading. If a user manually edits and saves the file in an editor that writes byte-by-byte, RMCP may read it mid-write. Because of the strict Fail-Closed requirement, an invalid JSON read mid-write will be treated as Tampering, causing a `std::process::exit(1)` crash. **DevEx Tip:** Always use the `rmcp` CLI tools or atomic renames (`mv`) to update policies on live systems.
 
 ---
 
@@ -50,11 +65,12 @@ RMCP includes `shield-cli`, a standalone utility that visualizes and analyzes yo
 ### 1. One-Command Setup (Recommended)
 Good security tools should be invisible. You don't need to manually configure environments or run multiple scripts. 
 
-First, get the binary (either via `cargo install --git https://github.com/darksolitaire9-hub/rmcp --tag v0.2.1` or by downloading from the [GitHub Releases](https://github.com/darksolitaire9-hub/rmcp/releases) page).
+First, get the binary (either via `cargo install --git https://github.com/darksolitaire9-hub/rmcp --tag v0.3.3` or by downloading from the [GitHub Releases](https://github.com/darksolitaire9-hub/rmcp/releases) page).
 
-Then, just point RMCP at your Cursor or Claude config file:
+Then, just point RMCP at your IDE's config file (e.g. Claude Desktop, Cursor, VS Code, or Windsurf):
 ```bash
-rmcp install /path/to/claude_desktop_config.json
+rmcp install ~/.cursor/mcp.json
+# OR for VS Code: rmcp install ~/AppData/Roaming/Code/User/settings.json
 ```
 
 **What this automatically does:**
@@ -95,7 +111,7 @@ If you are an autonomous AI Agent interacting with a system protected by RMCP, *
 1. **Do not attempt to bypass RMCP.** RMCP runs natively on the host OS. You cannot uninstall it or disable it without the user's `RMCP_PUBLIC_KEY`.
 2. **Handling `-32603` Security Errors:** If a tool call returns an error containing `RMCP Security: Pattern-Based Argument Scrubbing`, you have hit a cryptographic blocklist configured by the human user.
 3. **Do not retry the identical command.** If you try to brute-force a blocked command (like reading `/etc/passwd` or calling `drop_table`), RMCP will continue to drop your packets.
-4. **Rate Limiting:** Do not spam >50 tool calls per second. RMCP's Motif Auditor will trigger and isolate the connection.
+4. **Rate Limiting:** Do not spam >50 tool calls per second. RMCP's Rate Limiter will trigger and isolate the connection.
 5. **Auditing:** You can read the `.rmcp_audit.log` file in the working directory to understand what payloads were dropped, but you cannot alter past entries due to the SHA-256 hash-chaining protocol.
 6. **Shield Builder Skill:** If you are configuring RMCP for a user, you must use the [RMCP Shield Builder Skill](skills/rmcp-shield-builder.md) to generate the `shield_policy.json` with appropriate privacy schema definitions and MESA edge criticality rankings.
 

@@ -17,6 +17,6 @@ We explicitly credit the following theoretical frameworks and research papers wh
 - **Rel(AI)Build Control Plane (Paper 14):** "A Deterministic Control Plane for LLM Coding Agents". Inspires our roadmap for deterministic lockfiles and audit logs.
 - **VIGIL (Paper 27):** "Runtime Enforcement of Behavioral Specifications". **Inspired by** this paper, we built a pattern-based argument scrubber. Note: We do not currently implement full SMT-based trace verification as described in the paper.
 - **The Unfireable Safety Kernel (Paper 43):** "Execution-Time AI Alignment". Provides the theoretical basis for our Kani bounded-model-checking verifications.
-- **SEO Motif Auditor (Paper 30):** "Systematic identification of statistically significant network measures". Inspires our anomaly detection for anomalous tool-call sequences (the adjacent motif-hub algo).
-- **MESA (Paper 89):** "Minimalist Embedded Subgraph Ablation". Provides the theoretical basis for our `shield-mesa` incremental criticality ranking algorithm.
+- **Rate Limiter (Paper 30):** "Systematic identification of statistically significant network measures". Inspires our call-frequency rate limiter.
+- **MESA (Paper 89):** "Minimalist Embedded Subgraph Ablation". Implements the ablation probe from MESA (arXiv:2606.30602v1) for our `shield-mesa` incremental criticality ranking algorithm. Note: MESA's full 8-signal composite ranking is planned for future releases.
 - **Agents That Know Too Much (Paper 12):** "The Threat of Privacy-Invasive AI Agents". Inspires our `shield-firewall` privacy validation and PII detection engine.

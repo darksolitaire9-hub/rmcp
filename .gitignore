@@ -1,4 +1,17 @@
-/target
-.env
+# Build artifacts
+/target/
+
+# Runtime generated files
+*.log
 .rmcp_audit.log
-test_rmcp.json*
+rmcp.json
+rmcp.json.lock
+shield_policy.json
+shield_graph.json
+shield_report.json
+test_policy.json
+test_policy.json.lock
+
+# Graphify cache
+graphify-out/
+

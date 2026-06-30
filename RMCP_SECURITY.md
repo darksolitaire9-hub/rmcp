@@ -6,7 +6,7 @@ RMCP is a lightweight, mathematically proven security proxy designed to intercep
 
 1. **Unfireable Safety Kernel (Paper 43)**
    - RMCP runs entirely out-of-band from the LLM agent.
-   - It is written in Rust with bounded-model-checking (Kani) proving 100% memory safety and panic-free execution on payload parsing.
+   - It is written in Rust with bounded-model-checking harnesses (Kani) for memory safety verification of payload parsing.
    - **Strict Fail-Closed:** If the wrapped MCP server or the proxy crashes, the operating system tears down the pipes. Traffic cannot "pass through" a dead proxy. Config tampering immediately calls `std::process::exit(1)`.
 
 2. **Config Integrity & Hot-Reloading**
@@ -17,9 +17,9 @@ RMCP is a lightweight, mathematically proven security proxy designed to intercep
    - RMCP parses the `params` of incoming JSON-RPC traffic.
    - It blocks explicitly defined patterns (e.g., `/etc/passwd`) and disallowed tool methods, returning synthesized JSON-RPC errors (`-32603`).
 
-4. **SEO Motif Auditor (Paper 30 - Network Theory)**
+4. **Rate Limiter (inspired by Paper 30)**
    - Acts as an algorithmic anomaly detector and rate-limiter.
-   - Evaluates the temporal density of tool calls. If an agent loops autonomously (>50 calls per second), RMCP classifies it as an anomalous "motif-hub" and drops the connection.
+   - Evaluates the temporal density of tool calls. If an agent loops autonomously (>50 calls per second), RMCP classifies it as an anomalous high-frequency call burst and drops the connection.
 
 5. **Rel(AI)Build Auditing (Paper 14)**
    - Append-only telemetry: Every intercepted payload is written directly to `.rmcp_audit.log` to provide externalized evidence of agent behavior.
@@ -54,7 +54,7 @@ RMCP implements practical, working security mechanisms inspired by cutting-edge 
 |---|---|---|
 | **VIGIL** | **Pattern-based argument scrubbing**: `params_str.contains(blocked_arg)`. Substring matching on a per-call basis. | **SMT-based execution trace monitoring**: using formal solvers (like Z3) to evaluate temporal dependencies across multiple agent steps. |
 | **ShareLock** | 1MB payload cap, bidirectional Aho-Corasick scanning. | Algebraic Shamir recombination detection. |
-| **Safety Kernel** | Out-of-band Rust proxy, fail-closed architecture, formal verification via Kani. | Broader threat modeling outlined in the original paper. |
+| **Safety Kernel** | Out-of-band Rust proxy, fail-closed architecture, Kani harnesses present, CI verification pending. | Broader threat modeling outlined in the original paper. |
 | **Rel(AI)Build** | SHA-256 hash-chained append-only audit logs, config lockfiles. | Full deterministic orchestration control plane. |
 
 *RMCP explicitly uses "inspired by" for features where it implements a subset of the published method.*

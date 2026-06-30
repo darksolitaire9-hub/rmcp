@@ -1,4 +1,1 @@
-{
-  "blocked_args": [],
-  "blocked_methods": []
-}
+{"blocked_methods": ["dangerous_tool"], "blocked_args": ["TOP-SECRET-KEY"], "tool_schemas": {}}

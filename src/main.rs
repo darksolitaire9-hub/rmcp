@@ -11,7 +11,7 @@ use tokio::process::Command;
 use clap::{Parser, Subcommand};
 
 #[derive(Parser)]
-#[command(name = "rmcp", version = "0.2.0", about = "Rust Model Context Protocol Security Gateway")]
+#[command(name = "rmcp", version = "0.3.3", about = "Rust Model Context Protocol Security Gateway")]
 struct Cli {
     #[command(subcommand)]
     command: Commands,
@@ -77,6 +77,36 @@ async fn main() -> io::Result<()> {
         }
     }
 }
+fn load_combined_policy(config_path: &str, pubkey_hex: &str, template_patterns: &[String], firewall: &mut shield_firewall::Firewall) -> Result<(policy::PolicyConfig, u64, u64), String> {
+    let mut policy = policy::load_policy(config_path, pubkey_hex)?;
+    let mut rmcp_time = 0;
+    if let Ok(meta) = std::fs::metadata(config_path) {
+        rmcp_time = meta.modified().unwrap_or(std::time::SystemTime::UNIX_EPOCH)
+            .duration_since(std::time::UNIX_EPOCH).unwrap().as_secs();
+    }
+
+    let shield_policy_path = "shield_policy.json";
+    let mut shield_time = 0;
+    if std::path::Path::new(shield_policy_path).exists() {
+        if let Ok(meta) = std::fs::metadata(shield_policy_path) {
+            shield_time = meta.modified().unwrap_or(std::time::SystemTime::UNIX_EPOCH)
+                .duration_since(std::time::UNIX_EPOCH).unwrap().as_secs();
+        }
+        if let Ok(file) = std::fs::File::open(shield_policy_path) {
+            if let Ok(shield_policy) = serde_json::from_reader::<_, policy::PolicyConfig>(file) {
+                policy.tool_schemas = shield_policy.tool_schemas;
+            }
+        }
+    }
+
+    // Rebuild firewall schemas
+    *firewall = shield_firewall::Firewall::new(template_patterns).unwrap();
+    for (tool_name, schema) in &policy.tool_schemas {
+        let _ = firewall.add_tool_schema(tool_name.clone(), schema.allowed_fields.clone(), schema.pii_patterns.clone());
+    }
+
+    Ok((policy, rmcp_time, shield_time))
+}
 
 async fn run_proxy(args: Vec<String>) -> io::Result<()> {
     let max_payload_size: usize = env::var("RMCP_MAX_PAYLOAD_SIZE")
@@ -100,16 +130,38 @@ async fn run_proxy(args: Vec<String>) -> io::Result<()> {
             .args(&args[1..])
             .stdin(std::process::Stdio::piped())
             .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::piped())
             .kill_on_drop(true)
             .spawn()?;
 
         let mut child_stdin = child.stdin.take().expect("Failed to open child stdin");
         let child_stdout = child.stdout.take().expect("Failed to open child stdout");
+        let mut child_stderr = child.stderr.take().expect("Failed to open child stderr");
 
-        // Task 1: Forward Host stdin -> Child stdin (With safety bound)
+        let config_path_clone1 = config_path.clone();
+        let pubkey_hex_clone1 = pubkey_hex.clone();
+        let template_patterns_clone1 = template_patterns.clone();
+
+        // Task 1: Forward Host stdin -> Child stdin (With safety bound & Full-Duplex Scanning)
         let stdin_forward = tokio::spawn(async move {
             let mut stdin_reader = BufReader::new(tokio::io::stdin());
+            let mut host_stdout = tokio::io::stdout(); // Need to write errors back to Agent
             let mut line_buf = Vec::new();
+            
+            let mut last_modified_rmcp: u64 = 0;
+            let mut last_modified_shield: u64 = 0;
+            let mut current_policy = policy::PolicyConfig::default();
+            let mut current_firewall = shield_firewall::Firewall::new(&template_patterns_clone1).unwrap();
+            let shield_policy_path = "shield_policy.json";
+
+            if !pubkey_hex_clone1.is_empty() {
+                if let Ok((p, t1, t2)) = load_combined_policy(&config_path_clone1, &pubkey_hex_clone1, &template_patterns_clone1, &mut current_firewall) {
+                    current_policy = p;
+                    last_modified_rmcp = t1;
+                    last_modified_shield = t2;
+                }
+            }
+
             loop {
                 let buf = match stdin_reader.fill_buf().await {
                     Ok([]) => break,
@@ -121,7 +173,44 @@ async fn run_proxy(args: Vec<String>) -> io::Result<()> {
                     Some(pos) => {
                         line_buf.extend_from_slice(&buf[..=pos]);
                         stdin_reader.consume(pos + 1);
-                        if child_stdin.write_all(&line_buf).await.is_err() { break; }
+                        
+                        // Policy Hot-Reloading
+                        if !pubkey_hex_clone1.is_empty() {
+                            let mut needs_reload = false;
+                            if let Ok(meta) = std::fs::metadata(&config_path_clone1) {
+                                let mtime = meta.modified().unwrap_or(std::time::SystemTime::UNIX_EPOCH).duration_since(std::time::UNIX_EPOCH).unwrap().as_secs();
+                                if mtime > last_modified_rmcp { needs_reload = true; }
+                            }
+                            if let Ok(meta) = std::fs::metadata(shield_policy_path) {
+                                let mtime = meta.modified().unwrap_or(std::time::SystemTime::UNIX_EPOCH).duration_since(std::time::UNIX_EPOCH).unwrap().as_secs();
+                                if mtime > last_modified_shield { needs_reload = true; }
+                            }
+                            if needs_reload {
+                                match load_combined_policy(&config_path_clone1, &pubkey_hex_clone1, &template_patterns_clone1, &mut current_firewall) {
+                                    Ok((p, t1, t2)) => {
+                                        current_policy = p; last_modified_rmcp = t1; last_modified_shield = t2;
+                                    }
+                                    Err(e) => {
+                                        eprintln!("RMCP Fatal: Config tampered during hot-reload: {}", e);
+                                        std::process::exit(1);
+                                    }
+                                }
+                            }
+                        }
+                        
+                        match proxy::process_payload(&line_buf, max_payload_size, &current_policy.blocked_methods, &current_policy.blocked_args, &current_firewall) {
+                            Ok(Some(normalized_bytes)) => {
+                                if child_stdin.write_all(&normalized_bytes).await.is_err() { break; }
+                            }
+                            Ok(None) => {}
+                            Err(e) => {
+                                let error_msg = proxy::synthesize_error(&line_buf, &e);
+                                let _ = host_stdout.write_all(error_msg.as_bytes()).await;
+                                let _ = host_stdout.flush().await;
+                                eprintln!("RMCP Security Error: {}", e);
+                                std::process::exit(1);
+                            }
+                        }
                         line_buf.clear();
                     }
                     None => {
@@ -129,8 +218,12 @@ async fn run_proxy(args: Vec<String>) -> io::Result<()> {
                         line_buf.extend_from_slice(buf);
                         stdin_reader.consume(len);
                         if line_buf.len() > max_payload_size {
-                            // Drop excessive input for safety
-                            break;
+                            let e = "Payload exceeds maximum allowed size";
+                            let error_msg = proxy::synthesize_error(&line_buf, e);
+                            let _ = host_stdout.write_all(error_msg.as_bytes()).await;
+                            let _ = host_stdout.flush().await;
+                            eprintln!("RMCP Security Error: {}", e);
+                            std::process::exit(1);
                         }
                     }
                 }
@@ -138,8 +231,9 @@ async fn run_proxy(args: Vec<String>) -> io::Result<()> {
         });
 
         // Task 2: Filter Child stdout -> Host stdout
-        let config_path_clone = config_path.clone();
-        let pubkey_hex_clone = pubkey_hex.clone();
+        let config_path_clone2 = config_path.clone();
+        let pubkey_hex_clone2 = pubkey_hex.clone();
+        let template_patterns_clone2 = template_patterns.clone();
         
         let stdout_filter = tokio::spawn(async move {
             let mut stdout_reader = BufReader::new(child_stdout);
@@ -149,53 +243,14 @@ async fn run_proxy(args: Vec<String>) -> io::Result<()> {
             let mut last_modified_rmcp: u64 = 0;
             let mut last_modified_shield: u64 = 0;
             let mut current_policy = policy::PolicyConfig::default();
-            
-            let mut current_firewall = shield_firewall::Firewall::new(&template_patterns).unwrap();
-
+            let mut current_firewall = shield_firewall::Firewall::new(&template_patterns_clone2).unwrap();
             let shield_policy_path = "shield_policy.json";
 
-            let load_combined_policy = |config_path: &str, pubkey_hex: &str, firewall: &mut shield_firewall::Firewall| -> Result<(policy::PolicyConfig, u64, u64), String> {
-                let mut policy = policy::load_policy(config_path, pubkey_hex)?;
-                let mut rmcp_time = 0;
-                if let Ok(meta) = std::fs::metadata(config_path) {
-                    rmcp_time = meta.modified().unwrap_or(std::time::SystemTime::UNIX_EPOCH)
-                        .duration_since(std::time::UNIX_EPOCH).unwrap().as_secs();
-                }
-
-                let mut shield_time = 0;
-                if std::path::Path::new(shield_policy_path).exists() {
-                    if let Ok(meta) = std::fs::metadata(shield_policy_path) {
-                        shield_time = meta.modified().unwrap_or(std::time::SystemTime::UNIX_EPOCH)
-                            .duration_since(std::time::UNIX_EPOCH).unwrap().as_secs();
-                    }
-                    if let Ok(file) = std::fs::File::open(shield_policy_path) {
-                        if let Ok(shield_policy) = serde_json::from_reader::<_, policy::PolicyConfig>(file) {
-                            policy.tool_schemas = shield_policy.tool_schemas;
-                        }
-                    }
-                }
-
-                // Rebuild firewall schemas
-                *firewall = shield_firewall::Firewall::new(&template_patterns).unwrap();
-                for (tool_name, schema) in &policy.tool_schemas {
-                    let _ = firewall.add_tool_schema(tool_name.clone(), schema.allowed_fields.clone(), schema.pii_patterns.clone());
-                }
-
-                Ok((policy, rmcp_time, shield_time))
-            };
-
-            // Attempt initial load
-            if !pubkey_hex_clone.is_empty() {
-                match load_combined_policy(&config_path_clone, &pubkey_hex_clone, &mut current_firewall) {
-                    Ok((p, t1, t2)) => {
-                        current_policy = p;
-                        last_modified_rmcp = t1;
-                        last_modified_shield = t2;
-                    }
-                    Err(e) => {
-                        eprintln!("RMCP Fatal: Config integrity failure on startup: {}", e);
-                        std::process::exit(1);
-                    }
+            if !pubkey_hex_clone2.is_empty() {
+                if let Ok((p, t1, t2)) = load_combined_policy(&config_path_clone2, &pubkey_hex_clone2, &template_patterns_clone2, &mut current_firewall) {
+                    current_policy = p;
+                    last_modified_rmcp = t1;
+                    last_modified_shield = t2;
                 }
             }
             
@@ -212,25 +267,20 @@ async fn run_proxy(args: Vec<String>) -> io::Result<()> {
                         stdout_reader.consume(pos + 1);
                         
                         // Policy Hot-Reloading
-                        if !pubkey_hex_clone.is_empty() {
+                        if !pubkey_hex_clone2.is_empty() {
                             let mut needs_reload = false;
-                            if let Ok(meta) = std::fs::metadata(&config_path_clone) {
-                                let mtime = meta.modified().unwrap_or(std::time::SystemTime::UNIX_EPOCH)
-                                    .duration_since(std::time::UNIX_EPOCH).unwrap().as_secs();
+                            if let Ok(meta) = std::fs::metadata(&config_path_clone2) {
+                                let mtime = meta.modified().unwrap_or(std::time::SystemTime::UNIX_EPOCH).duration_since(std::time::UNIX_EPOCH).unwrap().as_secs();
                                 if mtime > last_modified_rmcp { needs_reload = true; }
                             }
                             if let Ok(meta) = std::fs::metadata(shield_policy_path) {
-                                let mtime = meta.modified().unwrap_or(std::time::SystemTime::UNIX_EPOCH)
-                                    .duration_since(std::time::UNIX_EPOCH).unwrap().as_secs();
+                                let mtime = meta.modified().unwrap_or(std::time::SystemTime::UNIX_EPOCH).duration_since(std::time::UNIX_EPOCH).unwrap().as_secs();
                                 if mtime > last_modified_shield { needs_reload = true; }
                             }
-
                             if needs_reload {
-                                match load_combined_policy(&config_path_clone, &pubkey_hex_clone, &mut current_firewall) {
+                                match load_combined_policy(&config_path_clone2, &pubkey_hex_clone2, &template_patterns_clone2, &mut current_firewall) {
                                     Ok((p, t1, t2)) => {
-                                        current_policy = p;
-                                        last_modified_rmcp = t1;
-                                        last_modified_shield = t2;
+                                        current_policy = p; last_modified_rmcp = t1; last_modified_shield = t2;
                                     }
                                     Err(e) => {
                                         eprintln!("RMCP Fatal: Config tampered during hot-reload: {}", e);
@@ -241,11 +291,11 @@ async fn run_proxy(args: Vec<String>) -> io::Result<()> {
                         }
                         
                         match proxy::process_payload(&line_buf, max_payload_size, &current_policy.blocked_methods, &current_policy.blocked_args, &current_firewall) {
-                            Ok(true) => {
-                                if host_stdout.write_all(&line_buf).await.is_err() { break; }
+                            Ok(Some(normalized_bytes)) => {
+                                if host_stdout.write_all(&normalized_bytes).await.is_err() { break; }
                                 let _ = host_stdout.flush().await;
                             }
-                            Ok(false) => {}
+                            Ok(None) => {}
                             Err(e) => {
                                 let error_msg = proxy::synthesize_error(&line_buf, &e);
                                 let _ = host_stdout.write_all(error_msg.as_bytes()).await;
@@ -273,7 +323,13 @@ async fn run_proxy(args: Vec<String>) -> io::Result<()> {
             }
         });
 
-        let _ = tokio::join!(stdin_forward, stdout_filter);
+        // Task 3: Forward Child stderr -> Host stderr (Diagnostic Channel)
+        let stderr_forward = tokio::spawn(async move {
+            let mut host_stderr = tokio::io::stderr();
+            let _ = tokio::io::copy(&mut child_stderr, &mut host_stderr).await;
+        });
+
+        let _ = tokio::join!(stdin_forward, stdout_filter, stderr_forward);
         
         let status = child.wait().await?;
         if status.success() {
