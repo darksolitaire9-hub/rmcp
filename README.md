@@ -9,6 +9,13 @@ The Model Context Protocol (MCP) bridges the gap between AI Agents (like Cursor,
 
 **RMCP** is a lightweight proxy written in Rust that intercepts and strictly filters MCP traffic *before* it reaches the agent.
 
+## Table of Contents
+- [Core Features & Defense Mechanisms](#core-features--defense-mechanisms)
+- [How-To Guide for Humans (CLI ELI5)](#-how-to-guide-for-humans)
+- [Instructions for AI Agents](#-instructions-for-ai-agents)
+- [Dynamic Templates & Architecture](#%EF%B8%8F-dynamic-templates--fail-closed-architecture)
+- [License](#license)
+
 ## Core Features & Defense Mechanisms
 
 ### 1. Pattern-Based Argument Scrubbing & Cryptographic Policies
@@ -33,14 +40,21 @@ RMCP includes `shield-cli`, a standalone utility that visualizes and analyzes yo
 
 ## 🧑‍💻 How-To Guide for Humans
 
+**Explain Like I'm 5 (CLI Commands)**:
+- `rmcp scan` - Extracts logs to build a map of who your agent is talking to. (Like drawing a map of phone calls).
+- `rmcp mesa` - Runs an algorithm to find out which of those phone calls are the most dangerous, and builds a security policy to protect them.
+- `rmcp install <path>` - Injects the security guard into your AI's configuration file (like Cursor or Claude).
+- `rmcp keygen <path>` - Creates cryptographic keys so nobody can tamper with your security rules.
+- `rmcp <mcp-command...>` - Runs the actual connection through the security guard. (e.g. `rmcp npx @modelcontextprotocol/server-postgres`).
+
 ### 1. One-Command Setup (Recommended)
 Good security tools should be invisible. You don't need to manually configure environments or run multiple scripts. 
 
-First, get the binary (either via `cargo install --git https://github.com/darksolitaire9-hub/rmcp --tag v0.1.5` or by downloading from the [GitHub Releases](https://github.com/darksolitaire9-hub/rmcp/releases) page).
+First, get the binary (either via `cargo install --git https://github.com/darksolitaire9-hub/rmcp --tag v0.2.0` or by downloading from the [GitHub Releases](https://github.com/darksolitaire9-hub/rmcp/releases) page).
 
 Then, just point RMCP at your Cursor or Claude config file:
 ```bash
-rmcp --install /path/to/claude_desktop_config.json
+rmcp install /path/to/claude_desktop_config.json
 ```
 
 **What this automatically does:**
