@@ -2,6 +2,10 @@
 
 All notable changes to this project will be documented in this file.
 
+## [v0.2.1] - 2026-06-30
+### Fixed
+- **Keygen DX**: Added a graceful error handler for `rmcp keygen` when the target policy file does not exist, instructing the user to run `rmcp install` first instead of returning a cryptic `OS error 2`.
+
 ## [v0.2.0] - 2026-06-30
 ### Added
 - **Agent Privacy Firewall Plugin**: Implemented an Aho-Corasick semantic firewall that strictly enforces allowed fields (e.g., blocking `SSN` or `EMAIL` strings from leaking into unauthorized tools).

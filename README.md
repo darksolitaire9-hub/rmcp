@@ -50,7 +50,7 @@ RMCP includes `shield-cli`, a standalone utility that visualizes and analyzes yo
 ### 1. One-Command Setup (Recommended)
 Good security tools should be invisible. You don't need to manually configure environments or run multiple scripts. 
 
-First, get the binary (either via `cargo install --git https://github.com/darksolitaire9-hub/rmcp --tag v0.2.0` or by downloading from the [GitHub Releases](https://github.com/darksolitaire9-hub/rmcp/releases) page).
+First, get the binary (either via `cargo install --git https://github.com/darksolitaire9-hub/rmcp --tag v0.2.1` or by downloading from the [GitHub Releases](https://github.com/darksolitaire9-hub/rmcp/releases) page).
 
 Then, just point RMCP at your Cursor or Claude config file:
 ```bash
