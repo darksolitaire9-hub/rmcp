@@ -51,6 +51,7 @@ For Enterprise Security teams evaluating RMCP, the following boundaries are expl
 1. **`stderr` Diagnostic Bypass**: RMCP actively filters `stdin` and `stdout` (the primary JSON-RPC channels). However, `stderr` is passed completely raw to the host's `stderr` stream. This ensures standard error logs remain readable for debugging, but means `stderr` is not scrubbed for PII or blocked patterns. **Troubleshooting Note:** If RMCP fails to boot due to a Signature Mismatch, Tampering, or Missing Keys, the fatal error message will be printed to `stderr` and the proxy will exit. If your IDE appears to be "hanging" or "failing to start", check the IDE's MCP Server Output or Extension Logs to view this `stderr` message.
 2. **Hot-Reload Race Conditions**: RMCP constantly polls `rmcp.json` for hot-reloading. If a user manually edits and saves the file in an editor that writes byte-by-byte, RMCP may read it mid-write. Because of the strict Fail-Closed requirement, an invalid JSON read mid-write will be treated as Tampering, causing a `std::process::exit(1)` crash. **DevEx Tip:** Always use the `rmcp` CLI tools or atomic renames (`mv`) to update policies on live systems.
 3. **Strict Ephemeral Keys vs Hot-Reloading**: To prevent persistent tampering, RMCP intentionally discards the private key immediately after generating the initial Ed25519 signature. As a result, if you manually edit `rmcp.json` while the proxy is running, you cannot generate a new valid signature that matches the injected `RMCP_PUBLIC_KEY`. The proxy will instantly fail-closed with `Signature mismatch! Tamper detected in config.` **DevEx Tip:** Modifying your security policy requires running `rmcp install` or `rmcp keygen` again and explicitly restarting the host agent with the new `RMCP_PUBLIC_KEY`.
+4. **Working Directory Mismatches (os error 2)**: Agentic IDEs (like Antigravity or Cursor) often spawn MCP servers with the Current Working Directory (CWD) set to their own AppData or extension directory, *not* the workspace root. Because RMCP looks for `rmcp.json` in the active CWD by default, this can cause a fatal `os error 2` ("The system cannot find the file specified"). **DevEx Tip:** Always inject the absolute path to your policy via the `RMCP_CONFIG_PATH` environment variable in your `mcp_config.json` to guarantee deterministic booting regardless of the IDE's CWD logic.
 
 ---
 
@@ -81,6 +82,10 @@ rmcp install ~/.cursor/mcp.json
 4. Injects the `RMCP_PUBLIC_KEY` into the server's `env` object automatically so you never have to copy-paste it.
 
 Your server is now protected by RMCP and will boot securely on the next run.
+
+> **Troubleshooting `os error 2` (The system cannot find the file specified)**
+> If you are using an Agentic IDE (like Antigravity or Cursor), the IDE might spawn the server in a different Working Directory than your project root. If RMCP fails to boot with `os error 2`, it means it cannot find `rmcp.json` in the IDE's AppData folder.
+> **The Fix:** Manually edit your IDE's MCP config file and add `"RMCP_CONFIG_PATH": "/absolute/path/to/rmcp.json"` to the server's `env` object to explicitly point RMCP to your policy file.
 
 ### 2. Configure Your Policy (Optional)
 If you want to customize your rules, you can edit the `rmcp.json` file defining what tools or arguments you want to block the AI from using:
@@ -114,7 +119,8 @@ If you are an autonomous AI Agent interacting with a system protected by RMCP, *
 3. **Do not retry the identical command.** If you try to brute-force a blocked command (like reading `/etc/passwd` or calling `drop_table`), RMCP will continue to drop your packets.
 4. **Rate Limiting:** Do not spam >50 tool calls per second. RMCP's Rate Limiter will trigger and isolate the connection.
 5. **Handling Signature Mismatches:** If an MCP connection fails with `RMCP Boot Fatal: Policy load failed: Signature mismatch! Tamper detected in config`, this means the policy file was edited but the cryptographic signatures and environment variables were not updated. **Do not attempt to fix the rust code or bypass the proxy.** Ask the human user to run `rmcp install <mcp-config-path>` and request them to provide the newly generated `RMCP_PUBLIC_KEY` so you can continue.
-6. **Auditing:** You can read the `.rmcp_audit.log` file in the working directory to understand what payloads were dropped, but you cannot alter past entries due to the SHA-256 hash-chaining protocol.
+6. **Handling CWD Mismatches (os error 2):** If an MCP connection fails with `RMCP Boot Fatal: Policy load failed: Failed to read config: The system cannot find the file specified. (os error 2)`, this means the host IDE spawned the MCP server in an AppData/Extension directory rather than the workspace root, causing RMCP to miss the `rmcp.json` file. Fix this by injecting the `RMCP_CONFIG_PATH` environment variable with the absolute path to the workspace's `rmcp.json` inside the IDE's MCP server configuration.
+7. **Auditing:** You can read the `.rmcp_audit.log` file in the working directory to understand what payloads were dropped, but you cannot alter past entries due to the SHA-256 hash-chaining protocol.
 7. **Shield Builder Skill:** If you are configuring RMCP for a user, you must use the [RMCP Shield Builder Skill](skills/rmcp-shield-builder.md) to generate the `shield_policy.json` with appropriate privacy schema definitions and MESA edge criticality rankings.
 
 ## License
