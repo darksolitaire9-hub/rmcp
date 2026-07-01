@@ -10,8 +10,9 @@ RMCP is a lightweight, mathematically proven security proxy designed to intercep
    - **Strict Fail-Closed:** If the wrapped MCP server or the proxy crashes, the operating system tears down the pipes. Traffic cannot "pass through" a dead proxy. Config tampering immediately calls `std::process::exit(1)`.
 
 2. **Config Integrity & Hot-Reloading**
-   - The policy file (`rmcp.json`) is polled dynamically (`fs::metadata`) for zero-downtime policy hot-reloading.
-   - **Enterprise Crypto:** Any reload computes a SHA-256 hash of the config and verifies an Ed25519 signature stored in `.rmcp.lock` against an injected `RMCP_PUBLIC_KEY`. Tampering halts the proxy instantly.
+   - The policy file (`rmcp.json`) is polled dynamically (`fs::metadata`) for policy hot-reloading.
+   - **Enterprise Crypto:** Any reload computes a SHA-256 hash of the config and verifies an Ed25519 signature stored in the lockfile against an injected `RMCP_PUBLIC_KEY`. Tampering halts the proxy instantly.
+   - **Ephemeral Key Enforcement:** The private key is discarded immediately after `rmcp keygen`. This strict constraint means that if an attacker (or user) modifies `rmcp.json` while the proxy is running, a valid signature cannot be forged. The proxy will fail-closed and must be restarted with a freshly generated `RMCP_PUBLIC_KEY` after running `rmcp install`.
 
 3. **Pattern-Based Argument Scrubbing (Inspired by VIGIL, Paper 27)**
    - RMCP parses the `params` of incoming JSON-RPC traffic.

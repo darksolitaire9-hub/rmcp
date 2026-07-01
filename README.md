@@ -50,6 +50,7 @@ For Enterprise Security teams evaluating RMCP, the following boundaries are expl
 
 1. **`stderr` Diagnostic Bypass**: RMCP actively filters `stdin` and `stdout` (the primary JSON-RPC channels). However, `stderr` is passed completely raw to the host's `stderr` stream. This ensures standard error logs remain readable for debugging, but means `stderr` is not scrubbed for PII or blocked patterns. **Troubleshooting Note:** If RMCP fails to boot due to a Signature Mismatch, Tampering, or Missing Keys, the fatal error message will be printed to `stderr` and the proxy will exit. If your IDE appears to be "hanging" or "failing to start", check the IDE's MCP Server Output or Extension Logs to view this `stderr` message.
 2. **Hot-Reload Race Conditions**: RMCP constantly polls `rmcp.json` for hot-reloading. If a user manually edits and saves the file in an editor that writes byte-by-byte, RMCP may read it mid-write. Because of the strict Fail-Closed requirement, an invalid JSON read mid-write will be treated as Tampering, causing a `std::process::exit(1)` crash. **DevEx Tip:** Always use the `rmcp` CLI tools or atomic renames (`mv`) to update policies on live systems.
+3. **Strict Ephemeral Keys vs Hot-Reloading**: To prevent persistent tampering, RMCP intentionally discards the private key immediately after generating the initial Ed25519 signature. As a result, if you manually edit `rmcp.json` while the proxy is running, you cannot generate a new valid signature that matches the injected `RMCP_PUBLIC_KEY`. The proxy will instantly fail-closed with `Signature mismatch! Tamper detected in config.` **DevEx Tip:** Modifying your security policy requires running `rmcp install` or `rmcp keygen` again and explicitly restarting the host agent with the new `RMCP_PUBLIC_KEY`.
 
 ---
 
@@ -112,8 +113,9 @@ If you are an autonomous AI Agent interacting with a system protected by RMCP, *
 2. **Handling `-32603` Security Errors:** If a tool call returns an error containing `RMCP Security: Pattern-Based Argument Scrubbing`, you have hit a cryptographic blocklist configured by the human user.
 3. **Do not retry the identical command.** If you try to brute-force a blocked command (like reading `/etc/passwd` or calling `drop_table`), RMCP will continue to drop your packets.
 4. **Rate Limiting:** Do not spam >50 tool calls per second. RMCP's Rate Limiter will trigger and isolate the connection.
-5. **Auditing:** You can read the `.rmcp_audit.log` file in the working directory to understand what payloads were dropped, but you cannot alter past entries due to the SHA-256 hash-chaining protocol.
-6. **Shield Builder Skill:** If you are configuring RMCP for a user, you must use the [RMCP Shield Builder Skill](skills/rmcp-shield-builder.md) to generate the `shield_policy.json` with appropriate privacy schema definitions and MESA edge criticality rankings.
+5. **Handling Signature Mismatches:** If an MCP connection fails with `RMCP Boot Fatal: Policy load failed: Signature mismatch! Tamper detected in config`, this means the policy file was edited but the cryptographic signatures and environment variables were not updated. **Do not attempt to fix the rust code or bypass the proxy.** Ask the human user to run `rmcp install <mcp-config-path>` and request them to provide the newly generated `RMCP_PUBLIC_KEY` so you can continue.
+6. **Auditing:** You can read the `.rmcp_audit.log` file in the working directory to understand what payloads were dropped, but you cannot alter past entries due to the SHA-256 hash-chaining protocol.
+7. **Shield Builder Skill:** If you are configuring RMCP for a user, you must use the [RMCP Shield Builder Skill](skills/rmcp-shield-builder.md) to generate the `shield_policy.json` with appropriate privacy schema definitions and MESA edge criticality rankings.
 
 ## License
 MIT License. Built for open-source and enterprise protection.
