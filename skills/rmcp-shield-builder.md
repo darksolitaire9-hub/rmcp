@@ -43,3 +43,4 @@ You are an agent responsible for configuring the **RMCP Shield** security gatewa
 ## Troubleshooting
 - If RMCP returns a `FIREWALL BLOCK` error, it means a field was sent to a tool that is not present in its `allowed_fields`. You must either stop sending the field or update `shield_policy.json`.
 - If RMCP returns a `PII DETECTED` error, it means the firewall identified sensitive data based on the `pii_patterns` for that tool. Scrub the data before sending it.
+- If RMCP Boot fails with `Signature mismatch! Tamper detected in config`, this means the policy was edited but the cryptographic signatures were not updated. Because private keys are ephemeral, you cannot automatically bypass this. You MUST ask the human user to run `rmcp install` again and request them to provide you with the newly generated `RMCP_PUBLIC_KEY`.
